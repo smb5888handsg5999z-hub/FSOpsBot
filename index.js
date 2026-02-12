@@ -306,7 +306,7 @@ client.on("interactionCreate", async (interaction) => {
   const wsPing = interaction.client.ws.ping;
 
   const embed = new EmbedBuilder()
-    .setColor(000000)
+    .setColor(0x000000)
     .setDescription(
       `${interaction.user} Pong!\n\n` +
       `Bot latency Ping: ${botLatency}ms\n` +
