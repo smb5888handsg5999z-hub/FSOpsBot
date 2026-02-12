@@ -122,6 +122,7 @@ const airportRunways = {
       { name: "15", enabled: true, preferredDeparture: false, preferredArrival: false },
       { name: "14L", enabled: true, preferredDeparture: false, preferredArrival: false },
       { name: "14R", enabled: true, preferredDeparture: false, preferredArrival: false },
+    ],
   // Add more airports as needed
 };
 
