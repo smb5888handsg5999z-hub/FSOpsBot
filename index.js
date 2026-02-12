@@ -42,31 +42,17 @@ const client = new Client({
 // ===================== 2️⃣ Presence =====================
 client.once("ready", () => {
   console.log(`FS Operations online as ${client.user.tag}`);
-  
-  // Set the "Playing" activity
-  client.user.setActivity("SimBrief Dispatch", {
-    type: ActivityType.Playing,
-  });
-
-  // Set the Custom Status (text) and the online status
-  client.user.setPresence({
-    activities: [
-      {
-        name: "SimBrief Dispatch",
-        type: ActivityType.Playing,
-      },
-      {
-        name: "Helping with your flight simulation needs",
-        type: ActivityType.Custom,
-        state: "Helping with your flight simulation needs",
-      }
-    ],
-    status: "online",
+ client.user.setPresence({
+    status: 'dnd', // 'online', 'idle', 'invisible', 'dnd'
+    activities: [{
+        name: 'SimBrief Dispatch',
+        type: 'PLAYING' // 'PLAYING', 'LISTENING', 'WATCHING'
+    }]
+});
   });
 });
-
 // ===================== 3️⃣ Helper Functions =====================
-const airlineMap = { SIA: "SQ", TGW: "TR", MAS: "MH", HVN: "VN" };
+const airlineMap = { SIA: "SQ", TGW: "TR", MAS: "MH", HVN: "VN", AXM: "AK" };
 
 function mapFlightNumber(flightNo) {
   const prefix = flightNo.slice(0, 3);
@@ -90,15 +76,15 @@ function getStatus(flight) {
   const depAct = flight.departure.actual;
   const arrAct = flight.arrival.actual;
 
-  if (arrAct) return "Landed";
-  if (!depAct) return "📅 Scheduled";
+  if (arrAct) return "Aircraft Landed";
+  if (!depAct) return "Flight Scheduled";
   if (depEst && depSch) {
     const diff = new Date(depEst) - new Date(depSch);
-    if (diff > 5 * 60000) return "Delayed";
-    if (diff < -5 * 60000) return "Early";
-    return "On-Time";
+    if (diff > 5 * 60000) return "Flight Delayed";
+    if (diff < -5 * 60000) return "Flight Early";
+    return "Flight On-Time ✅";
   }
-  return "Scheduled";
+  return "Flight Scheduled";
 }
 
 function parseUTC(str) {
@@ -127,20 +113,20 @@ function formatAirlineDate(d) {
 // ===================== 4️⃣ Slash Commands =====================
 const commands = [
   new SlashCommandBuilder()
-    .setName("flightsearch")
-    .setDescription("Search for flight information using AviationStack")
+    .setName("flight-search")
+    .setDescription("Search for flight information via AviationStack")
     .addStringOption((option) =>
       option
-        .setName("flight_number")
+        .setName("Flight Number")
         .setDescription("Enter the flight number (eg. SQ108, SIA826")
         .setRequired(true),
     ),
   new SlashCommandBuilder()
-    .setName("metar")
+    .setName("METAR")
     .setDescription("Get METAR for an airport (raw/formated)")
     .addStringOption((option) =>
       option
-        .setName("icao")
+        .setName("ICAO Code")
         .setDescription("Enter the ICAO code (e.g. WSSS)")
         .setRequired(true),
     )
@@ -155,7 +141,7 @@ const commands = [
         ),
     ),
   new SlashCommandBuilder()
-    .setName("taf")
+    .setName("TAF")
     .setDescription("Get TAF for an airport (raw/formatted)")
     .addStringOption((option) =>
       option
@@ -174,11 +160,12 @@ const commands = [
         ),
     ),
   new SlashCommandBuilder()
-    .setName("ping")
+    .setName("Ping")
     .setDescription("Ping the bot"),
+  
   new SlashCommandBuilder()
-    .setName("flightannounce")
-    .setDescription("Post a flight announcement!")
+    .setName("flight-announce")
+    .setDescription("Post a flight announcement.")
     .addChannelOption((o) =>
       o
         .setName("channel")
@@ -201,91 +188,91 @@ const commands = [
         ),
     )
     .addStringOption((o) =>
-      o.setName("airline").setDescription("Airline").setRequired(true),
+      o.setName("Airline").setDescription("Airline").setRequired(true),
     )
     .addStringOption((o) =>
       o
-        .setName("flight_number")
+        .setName("Flight Number")
         .setDescription("Enter the flight number")
         .setRequired(true),
     )
     .addStringOption((o) =>
       o
-        .setName("departure_airport")
+        .setName("Departure Airport")
         .setDescription("The departure airport")
         .setRequired(true),
     )
     .addStringOption((o) =>
       o
-        .setName("arrival_airport")
+        .setName("Arrival Airport")
         .setDescription("The arrival airport")
         .setRequired(true),
     )
     .addBooleanOption((o) =>
       o
-        .setName("non_stop")
+        .setName("Non-stop?")
         .setDescription("Is the flight non-stop?")
         .setRequired(true),
     )
     .addStringOption((o) =>
       o
-        .setName("duration")
+        .setName("Flight Duration")
         .setDescription("Duration of the flight (estimated block time)")
         .setRequired(true),
     )
     .addStringOption((o) =>
       o
-        .setName("departure_time")
-        .setDescription("Scheduled Departure Time (YYYY-MM-DD HH:MM)")
+        .setName("Scheduled Departure Time")
+        .setDescription("Scheduled Departure Time (Use the format YYYY-MM-DD HH:MM)")
         .setRequired(true),
     )
     .addStringOption((o) =>
       o
-        .setName("arrival_time")
-        .setDescription("Scheduled Arrival time (YYYY-MM-DD HH:MM)")
+        .setName("Scheduled Arrival Time")
+        .setDescription("Scheduled Arrival time (Use the format YYYY-MM-DD HH:MM)")
         .setRequired(true),
     )
     .addStringOption((o) =>
       o
-        .setName("aircraft_type")
+        .setName("Aircraft Type")
         .setDescription("The aircraft type.")
         .setRequired(true),
     )
     .addUserOption((o) => o.setName("captain").setDescription("Select the captain assigned for the flight."))
     .addUserOption((o) =>
-      o.setName("first_officer").setDescription("Select the first officer assigned for the flight."),
+      o.setName("First Officer").setDescription("Select the first officer assigned for the flight."),
     )
     .addUserOption((o) =>
-      o.setName("additional_crew_member").setDescription("Select any addidtional assigned crew for the flight.").setRequired(false)
+      o.setName("Additional Crew Member (flight deck)").setDescription("Select any addidtional assigned crew for the flight.").setRequired(false)
     )
     .addUserOption((o) =>
-      o.setName("cabin_crew").setDescription("Select cabin crew assigned for the flight.").setRequired(false),
+      o.setName("Cabin Crew Member").setDescription("Select cabin crew assigned for the flight.").setRequired(false),
     )
     .addChannelOption((o) =>
       o
-        .setName("vc_channel")
+        .setName("VC Channel")
         .setDescription("Select VC channel that the flight will be hosted in.")
         .addChannelTypes(ChannelType.GuildVoice),
     )
     .addStringOption((o) =>
-      o.setName("departure_terminal").setDescription("Departure Terminal"),
+      o.setName("Departure Terminal").setDescription("Departure Terminal"),
     )
     .addStringOption((o) =>
-      o.setName("departure_gate").setDescription("Enter the departure gate."),
+      o.setName("Departure Gate").setDescription("Enter the departure gate."),
     )
     .addStringOption((o) =>
       o
-        .setName("checkin_row")
+        .setName("Check-in Row")
         .setDescription("Enter the Check-in Row (Counter Check-in only)").setRequired(false),
     )
     .addStringOption((o) =>
       o
-        .setName("discord_message_id")
+        .setName("Discord message ID")
         .setDescription("Discord Message Link for booking."),
     )
     .addBooleanOption((o) =>
       o
-        .setName("ping_role")
+        .setName("Ping flights role?")
         .setDescription("Ping the role in the announcement?")
         .setRequired(false),
     ),
@@ -311,10 +298,28 @@ client.on("interactionCreate", async (interaction) => {
 
   // ===================== Handle Commands =====================
   if (interaction.commandName === "ping") {
-    return interaction.reply({
-      content: `${interaction.user} Pong!`,
-    });
-  }
+  const sent = await interaction.reply({
+    content: "Pinging...",
+    fetchReply: true,
+  });
+
+  const botLatency = sent.createdTimestamp - interaction.createdTimestamp;
+  const wsPing = interaction.client.ws.ping;
+
+  const embed = new EmbedBuilder()
+    .setColor(000000)
+    .setDescription(
+      `${interaction.user} Pong!\n\n` +
+      `Bot latency Ping: ${botLatency}ms\n` +
+      `WebSocket Ping: ${wsPing}ms`
+    )
+    .setTimestamp();
+
+  await interaction.editReply({
+    content: "",
+    embeds: [embed],
+  });
+}
 
   // ===================== Flight Search =====================
   if (interaction.commandName === "flightsearch") {
@@ -328,7 +333,7 @@ client.on("interactionCreate", async (interaction) => {
       const data = await res.json();
       if (!data.data || data.data.length === 0) {
         await interaction.reply({
-          content: `Flight **${flightNo}** not found. If you suspect an error, please DM @SG1695B_Avgeek`,
+          content: `Flight **${flightNo}** not found. If you suspect an error, please DM <@1103255236803563540>`,
           ephemeral: true,
         });
         return;
@@ -341,35 +346,35 @@ client.on("interactionCreate", async (interaction) => {
 
       const embed = new EmbedBuilder()
         .setColor(0x1e90ff)
-        .setTitle(`✈️ Flight ${f.flight.iata}`)
+        .setTitle(`✈️ Flight ${f.flight.iata}/${f.flight.icao}`)
         .addFields(
-          { name: "Status", value: `${status}`, inline: true },
-          { name: "Aircraft", value: `${aircraft}`, inline: true },
-          { name: "Registration", value: `${registration}`, inline: true },
+          { name: "Flight Status", value: `${status}`, inline: true },
+          { name: "Aircraft Type", value: `${aircraft}`, inline: true },
+          { name: "Aircraft Registration", value: `${registration}`, inline: true },
           {
             name: "Departure",
-            value: `${f.departure.airport} (${f.departure.iata})\nTerminal: ${
-              f.departure.terminal || "N/A"
-            }\nGate: ${f.departure.gate || "N/A"}\nScheduled: ${formatUTC(
+            value: `${f.departure.airport} (${f.departure.iata})(${f.departure.icao})\nTerminal: ${
+              f.departure.terminal || "Currently not available."
+            }\nGate: ${f.departure.gate || "Not Available"}\nScheduled: ${formatUTC(
               f.departure.scheduled,
-            )}\nEstimated: ${formatUTC(f.departure.estimated)}`,
+            )}\nEstimated: ${formatUTC(f.departure.estimated)} (UTC)`,
           },
           {
             name: "Arrival",
             value: `${f.arrival.airport} (${f.arrival.iata})\nTerminal: ${
-              f.arrival.terminal || "N/A"
-            }\nGate: ${f.arrival.gate || "N/A"}\nScheduled: ${formatUTC(
-              f.arrival.scheduled,
-            )}\nEstimated: ${formatUTC(f.arrival.estimated)}`,
+              f.arrival.terminal || "Currently not available."
+            }\nGate: ${f.arrival.gate || "Not Available"}\nScheduled: ${formatUTC(
+              f.arrival.scheduled),
+            )}\nEstimated: ${formatUTC(f.arrival.estimated)} (UTC)`,
           },
         )
-        .setFooter({ text: "FS Operations Virtual" });
+        .setFooter({ text: "IN TESTING. FSOps Virtual Bot" });
 
       await interaction.reply({ embeds: [embed] });
     } catch (err) {
       console.error(err);
       await interaction.reply({
-        content: `❌ Error fetching flight **${flightNo}**. Please DM @SG1695B_Avgeek if you suspect an error.`,
+        content: `❌ Error fetching flight **${flightNo}**. Please DM <@1103255236803563540> if you suspect an error.`,
         ephemeral: true,
       });
     }
@@ -398,10 +403,10 @@ client.on("interactionCreate", async (interaction) => {
         metar.wind?.degrees && metar.wind?.speed_kts
           ? `${metar.wind.degrees}° ${metar.wind.speed_kts}KT`
           : "N/A";
-      const temp = metar.temperature?.celsius ?? "N/A";
-      const dew = metar.dewpoint?.celsius ?? "N/A";
-      const vis = metar.visibility?.miles_text ?? "N/A";
-      const qnh = metar.barometer?.hpa ?? "N/A";
+      const temp = metar.temperature?.celsius ?? "Not Available";
+      const dew = metar.dewpoint?.celsius ?? "Not Available";
+      const vis = metar.visibility?.miles_text ?? "Not Available";
+      const qnh = metar.barometer?.hpa ?? "Not Available";
       const clouds = metar.clouds
         ?.map((c) => `${c.text} at ${c.feet}ft`)
         .join(", ");
@@ -419,7 +424,7 @@ client.on("interactionCreate", async (interaction) => {
           { name: "Dewpoint", value: `${dew}°C`, inline: true },
           { name: "Visibility", value: vis, inline: true },
           { name: "Pressure (QNH)", value: `${qnh} hPa`, inline: true },
-          { name: "Clouds", value: clouds || "N/A" },
+          { name: "Clouds", value: clouds || "Not Available" },
           { name: "Raw METAR", value: `\`\`\`${rawText}\`\`\`` },
         );
       }
@@ -649,6 +654,7 @@ ${nonStop ? "Non-stop • " : ""}
     }
 
     await channel.send({ content: msg });
+    console.log("Flight announcement for ${flightNo} has been posted in ${channel}")
     await interaction.reply({
       content: `Success! ${flightNo} announcement has been posted in ${channel}`,
       ephemeral: true,
