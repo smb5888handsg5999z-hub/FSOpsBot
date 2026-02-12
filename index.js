@@ -3,7 +3,6 @@ import "dotenv/config";
 import {
   Client,
   GatewayIntentBits,
-  ActivityType,
   REST,
   Routes,
   SlashCommandBuilder,
@@ -44,7 +43,7 @@ client.once("ready", () => {
     status: 'dnd',
     activities: [{
       name: 'SimBrief Dispatch',
-      type: 'PLAYING'
+      type: 0 // Playing
     }]
   });
 });
@@ -98,16 +97,6 @@ function parseUTC(str) {
   return new Date(Date.UTC(year, month - 1, day, hour, minute));
 }
 
-function formatAirlineDate(d) {
-  const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const day = d.getUTCDate().toString().padStart(2, "0");
-  const month = d.toLocaleString("en-GB", { month: "long", timeZone: "UTC" });
-  const weekday = weekdays[d.getUTCDay()];
-  const hour = d.getUTCHours().toString().padStart(2, "0");
-  const minute = d.getUTCMinutes().toString().padStart(2, "0");
-  return `${day} ${month} (${weekday}) ${hour}:${minute}`;
-}
-
 // ===================== 4️⃣ Runway / ATIS Logic =====================
 const airportRunways = {
   WSSS: [
@@ -121,58 +110,60 @@ const airportRunways = {
   // Add more airports as needed
 };
 
+function isRunwayAligned(heading, windDeg) {
+  const diff = Math.abs((heading - windDeg + 360) % 360);
+  return diff <= 90;
+}
+
 function runwayHeading(rwyName) {
   const num = parseInt(rwyName.slice(0, 2), 10);
   return num * 10;
 }
 
-function isRunwayAligned(rwyHeading, windDeg) {
-  const diff = Math.abs((rwyHeading - windDeg + 360) % 360);
-  return diff <= 90; // within ±90 degrees
+async function fetchRunwaysOnline(icao) {
+  try {
+    const res = await fetch(`https://ourairports.com/data/runways.csv`);
+    const text = await res.text();
+    const lines = text.split("\n");
+    const runways = [];
+    for (const line of lines) {
+      const parts = line.split(",");
+      if (parts[1] === icao) {
+        runways.push({ name: parts[2], enabled: true, preferredDeparture: false, preferredArrival: false });
+      }
+    }
+    return runways;
+  } catch (err) {
+    console.error("Error fetching online runways:", err);
+    return [];
+  }
 }
 
-function pickRunways(icao, windDeg) {
-  const dbRunways = airportRunways[icao] || [];
-  const departureOptions = [];
-  const arrivalOptions = [];
+async function pickRunways(icao, windDeg) {
+  let dbRunways = airportRunways[icao];
+  let fromDatabase = true;
 
-  // Filter wind-aligned runways first
-  dbRunways.forEach(rwy => {
-    if (!rwy.enabled) return;
-    const heading = runwayHeading(rwy.name);
-    if (isRunwayAligned(heading, windDeg)) {
-      if (rwy.preferredDeparture) departureOptions.push(rwy.name);
-      if (rwy.preferredArrival) arrivalOptions.push(rwy.name);
+  if (!dbRunways) {
+    dbRunways = await fetchRunwaysOnline(icao);
+    fromDatabase = false;
+  }
+
+  const departure = [];
+  const arrival = [];
+
+  dbRunways.forEach((rwy) => {
+    const hdg = runwayHeading(rwy.name);
+    if (isRunwayAligned(hdg, windDeg) && rwy.enabled) {
+      if (rwy.preferredDeparture || !fromDatabase) departure.push(rwy.name);
+      if (rwy.preferredArrival || !fromDatabase) arrival.push(rwy.name);
     }
   });
 
-  // Fallback: if no wind-aligned preferred, pick any enabled runways aligned with wind
-  if (departureOptions.length === 0) {
-    dbRunways.forEach(rwy => {
-      if (!rwy.enabled) return;
-      const heading = runwayHeading(rwy.name);
-      if (isRunwayAligned(heading, windDeg)) departureOptions.push(rwy.name);
-    });
-  }
-  if (arrivalOptions.length === 0) {
-    dbRunways.forEach(rwy => {
-      if (!rwy.enabled) return;
-      const heading = runwayHeading(rwy.name);
-      if (isRunwayAligned(heading, windDeg)) arrivalOptions.push(rwy.name);
-    });
-  }
-
-  // Last fallback: all enabled runways if nothing aligns with wind
-  if (departureOptions.length === 0) {
-    dbRunways.forEach(rwy => { if (rwy.enabled) departureOptions.push(rwy.name); });
-  }
-  if (arrivalOptions.length === 0) {
-    dbRunways.forEach(rwy => { if (rwy.enabled) arrivalOptions.push(rwy.name); });
-  }
+  const note = fromDatabase ? "" : " (No preferential data)";
 
   return {
-    departure: departureOptions,
-    arrival: arrivalOptions
+    departure: departure.length ? departure.join(", ") + note : "None" + note,
+    arrival: arrival.length ? arrival.join(", ") + note : "None" + note,
   };
 }
 
@@ -182,12 +173,60 @@ const commands = [
     .setName("ping")
     .setDescription("Ping the bot"),
   new SlashCommandBuilder()
+    .setName("flight-search")
+    .setDescription("Search for flight information via AviationStack")
+    .addStringOption((option) =>
+      option
+        .setName("flight-number")
+        .setDescription("Enter the flight number (eg. SQ108, SIA826)")
+        .setRequired(true),
+    ),
+  new SlashCommandBuilder()
+    .setName("metar")
+    .setDescription("Get METAR for an airport (raw/formatted)")
+    .addStringOption((option) =>
+      option
+        .setName("icao")
+        .setDescription("Enter the ICAO code (e.g. WSSS)")
+        .setRequired(true),
+    )
+    .addStringOption((option) =>
+      option
+        .setName("format")
+        .setDescription("Choose METAR format: Raw or Formatted")
+        .setRequired(false)
+        .addChoices(
+          { name: "Formatted", value: "formatted" },
+          { name: "Raw", value: "raw" },
+        ),
+    ),
+  new SlashCommandBuilder()
+    .setName("taf")
+    .setDescription("Get TAF for an airport (raw/formatted)")
+    .addStringOption((option) =>
+      option
+        .setName("icao")
+        .setDescription("Enter the ICAO (e.g. WSSS)")
+        .setRequired(true),
+    )
+    .addStringOption((option) =>
+      option
+        .setName("format")
+        .setDescription("Choose TAF Format: Raw or Formatted")
+        .setRequired(false)
+        .addChoices(
+          { name: "Formatted", value: "formatted" },
+          { name: "Raw", value: "raw" },
+        ),
+    ),
+  new SlashCommandBuilder()
     .setName("atis-text")
     .setDescription("Get full METAR and runway recommendations")
-    .addStringOption(option =>
-      option.setName("icao")
+    .addStringOption((option) =>
+      option
+        .setName("icao")
         .setDescription("Enter the ICAO code (e.g. WSSS)")
-        .setRequired(true)
+        .setRequired(true),
     ),
 ].map(c => c.toJSON());
 
@@ -196,7 +235,9 @@ const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
 (async () => {
   try {
     console.log("Registering commands...");
-    await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
+    await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), {
+      body: commands,
+    });
     console.log("Commands successfully registered!");
   } catch (err) {
     console.error(err);
@@ -209,16 +250,139 @@ client.on("interactionCreate", async (interaction) => {
 
   // ------------------ Ping ------------------
   if (interaction.commandName === "ping") {
-    await interaction.reply("Pong!");
+    const sent = await interaction.reply({ content: "Pinging...", fetchReply: true });
+    const botLatency = sent.createdTimestamp - interaction.createdTimestamp;
+    const wsPing = interaction.client.ws.ping;
+    const embed = new EmbedBuilder()
+      .setColor(0x000000)
+      .setDescription(`${interaction.user} Pong!\n\nBot latency Ping: ${botLatency}ms\nWebSocket Ping: ${wsPing}ms`)
+      .setTimestamp();
+    await interaction.editReply({ content: "", embeds: [embed] });
+  }
+
+  // ------------------ Flight Search ------------------
+  if (interaction.commandName === "flight-search") {
+    let flightNo = mapFlightNumber(interaction.options.getString("flight-number").toUpperCase());
+    try {
+      const res = await fetch(`http://api.aviationstack.com/v1/flights?access_key=${process.env.AVIATIONSTACK_KEY}&flight_iata=${flightNo}`);
+      const data = await res.json();
+      if (!data.data || data.data.length === 0) {
+        await interaction.reply({ content: `Flight **${flightNo}** not found.`, ephemeral: true });
+        return;
+      }
+
+      const f = data.data[0];
+      const status = getStatus(f);
+      const aircraft = f.aircraft?.icao || f.aircraft?.iata || "N/A";
+      const registration = f.aircraft?.registration || "N/A";
+
+      const embed = new EmbedBuilder()
+        .setColor(0x1e90ff)
+        .setTitle(`✈️ Flight ${f.flight.iata}/${f.flight.icao}`)
+        .addFields(
+          { name: "Flight Status", value: status, inline: true },
+          { name: "Aircraft Type", value: aircraft, inline: true },
+          { name: "Aircraft Registration", value: registration, inline: true },
+          {
+            name: "Departure",
+            value: `${f.departure.airport} (${f.departure.iata})(${f.departure.icao})\nTerminal: ${f.departure.terminal || "N/A"}\nGate: ${f.departure.gate || "N/A"}\nScheduled: ${formatUTC(f.departure.scheduled)}\nEstimated: ${formatUTC(f.departure.estimated)} (UTC)`,
+          },
+          {
+            name: "Arrival",
+            value: `${f.arrival.airport} (${f.arrival.iata})(${f.arrival.icao})\nTerminal: ${f.arrival.terminal || "N/A"}\nGate: ${f.arrival.gate || "N/A"}\nScheduled: ${formatUTC(f.arrival.scheduled)}\nEstimated: ${formatUTC(f.arrival.estimated)} (UTC)`,
+          },
+        )
+        .setFooter({ text: "IN TESTING. FSOps Virtual Bot" });
+
+      await interaction.reply({ embeds: [embed] });
+    } catch (err) {
+      console.error(err);
+      await interaction.reply({ content: `❌ Error fetching flight **${flightNo}**.`, ephemeral: true });
+    }
+  }
+
+  // ------------------ METAR ------------------
+  if (interaction.commandName === "metar") {
+    const icao = interaction.options.getString("icao").toUpperCase();
+    const format = interaction.options.getString("format") || "formatted";
+    try {
+      const res = await fetch(`https://api.checkwx.com/metar/${icao}/decoded`, { headers: { "X-API-Key": process.env.CHECKWX_KEY } });
+      const data = await res.json();
+      if (!data.results || data.results === 0) {
+        await interaction.reply({ content: `No METAR found for ${icao}.`, ephemeral: true });
+        return;
+      }
+
+      const metar = data.data[0];
+      const rawText = metar.raw_text || "N/A";
+      const wind = metar.wind?.degrees && metar.wind?.speed_kts ? `${metar.wind.degrees}° ${metar.wind.speed_kts}KT` : "N/A";
+      const temp = metar.temperature?.celsius ?? "N/A";
+      const dew = metar.dewpoint?.celsius ?? "N/A";
+      const vis = metar.visibility?.miles_text ?? "N/A";
+      const qnh = metar.barometer?.hpa ?? "N/A";
+      const clouds = metar.clouds?.map((c) => `${c.text} at ${c.feet}ft`).join(", ") || "N/A";
+
+      const embed = new EmbedBuilder().setTitle(`METAR ${icao}`).setColor(0x1e90ff);
+
+      if (format === "raw") {
+        embed.addFields({ name: "Raw METAR", value: `\`\`\`${rawText}\`\`\`` });
+      } else {
+        embed.addFields(
+          { name: "Wind", value: wind, inline: true },
+          { name: "Temperature", value: `${temp}°C`, inline: true },
+          { name: "Dewpoint", value: `${dew}°C`, inline: true },
+          { name: "Visibility", value: vis, inline: true },
+          { name: "Pressure (QNH)", value: `${qnh} hPa`, inline: true },
+          { name: "Clouds", value: clouds },
+          { name: "Raw METAR", value: `\`\`\`${rawText}\`\`\`` },
+        );
+      }
+
+      await interaction.reply({ embeds: [embed] });
+    } catch (err) {
+      console.error(err);
+      await interaction.reply({ content: `❌ Error fetching METAR for ${icao}.`, ephemeral: true });
+    }
+  }
+
+  // ------------------ TAF ------------------
+  if (interaction.commandName === "taf") {
+    const icao = interaction.options.getString("icao").toUpperCase();
+    const format = interaction.options.getString("format") || "formatted";
+    try {
+      const res = await fetch(`https://api.checkwx.com/taf/${icao}/decoded`, { headers: { "X-API-Key": process.env.CHECKWX_KEY } });
+      const data = await res.json();
+      if (!data.results || data.results === 0) {
+        await interaction.reply({ content: `No TAF found for ${icao}.`, ephemeral: true });
+        return;
+      }
+
+      const taf = data.data[0];
+      const rawText = taf.raw_text || "N/A";
+
+      const embed = new EmbedBuilder().setTitle(`TAF ${icao}`).setColor(0x1e90ff);
+
+      if (format === "raw") {
+        embed.addFields({ name: "Raw TAF", value: `\`\`\`${rawText}\`\`\`` });
+      } else {
+        embed.addFields(
+          { name: "Forecast Summary", value: taf.forecast?.map(f => `From ${f.from} to ${f.to}: ${f.text}`).join("\n") || rawText },
+          { name: "Raw TAF", value: `\`\`\`${rawText}\`\`\`` },
+        );
+      }
+
+      await interaction.reply({ embeds: [embed] });
+    } catch (err) {
+      console.error(err);
+      await interaction.reply({ content: `❌ Error fetching TAF for ${icao}.`, ephemeral: true });
+    }
   }
 
   // ------------------ ATIS Text ------------------
   if (interaction.commandName === "atis-text") {
     const icao = interaction.options.getString("icao").toUpperCase();
     try {
-      const res = await fetch(`https://api.checkwx.com/metar/${icao}/decoded`, {
-        headers: { "X-API-Key": process.env.CHECKWX_KEY }
-      });
+      const res = await fetch(`https://api.checkwx.com/metar/${icao}/decoded`, { headers: { "X-API-Key": process.env.CHECKWX_KEY } });
       const data = await res.json();
       if (!data.results || data.results === 0) {
         await interaction.reply({ content: `No METAR found for ${icao}.`, ephemeral: true });
@@ -235,11 +399,7 @@ client.on("interactionCreate", async (interaction) => {
       const qnh = metar.barometer?.hpa ?? "N/A";
       const clouds = metar.clouds?.map(c => `${c.text} at ${c.feet}ft`).join(", ") || "N/A";
 
-      const runways = pickRunways(icao, windDeg);
-      const runwayText = {
-        departure: runways.departure.length ? runways.departure.join(", ") : "No available",
-        arrival: runways.arrival.length ? runways.arrival.join(", ") : "No available"
-      };
+      const runways = await pickRunways(icao, windDeg);
 
       const embed = new EmbedBuilder()
         .setTitle(`ATIS/METAR — ${icao}`)
@@ -252,8 +412,8 @@ client.on("interactionCreate", async (interaction) => {
           { name: "Visibility", value: vis, inline: true },
           { name: "Pressure (QNH)", value: `${qnh} hPa`, inline: true },
           { name: "Clouds", value: clouds },
-          { name: "Preferred Departure Runway(s)", value: runwayText.departure },
-          { name: "Preferred Arrival Runway(s)", value: runwayText.arrival },
+          { name: "Preferred Departure Runway(s)", value: runways.departure },
+          { name: "Preferred Arrival Runway(s)", value: runways.arrival },
         );
 
       await interaction.reply({ embeds: [embed] });
