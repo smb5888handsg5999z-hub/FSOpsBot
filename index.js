@@ -358,13 +358,13 @@ client.on("interactionCreate", async (interaction) => {
               f.departure.scheduled,
             )}\nEstimated: ${formatUTC(f.departure.estimated)} (UTC)`,
           },
-          {
+          {  
             name: "Arrival",
-            value: `${f.arrival.airport} (${f.arrival.iata})\nTerminal: ${
+            value: `${f.arrival.airport} (${f.arrival.iata})(${f.arrival.icao})\nTerminal: ${
               f.arrival.terminal || "Currently not available."
             }\nGate: ${f.arrival.gate || "Not Available"}\nScheduled: ${formatUTC(
-              f.arrival.scheduled),
-            }\nEstimated: ${formatUTC(f.arrival.estimated)} (UTC)`,
+              f.arrival.scheduled,
+            )}\nEstimated: ${formatUTC(f.arrival.estimated)} (UTC)`,
           },
         )
         .setFooter({ text: "IN TESTING. FSOps Virtual Bot" });
