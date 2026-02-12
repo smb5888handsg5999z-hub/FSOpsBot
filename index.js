@@ -42,13 +42,12 @@ const client = new Client({
 // ===================== 2️⃣ Presence =====================
 client.once("ready", () => {
   console.log(`FS Operations online as ${client.user.tag}`);
- client.user.setPresence({
+  client.user.setPresence({
     status: 'dnd', // 'online', 'idle', 'invisible', 'dnd'
     activities: [{
         name: 'SimBrief Dispatch',
         type: 'PLAYING' // 'PLAYING', 'LISTENING', 'WATCHING'
     }]
-});
   });
 });
 // ===================== 3️⃣ Helper Functions =====================
