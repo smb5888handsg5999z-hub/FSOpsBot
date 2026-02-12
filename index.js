@@ -107,6 +107,21 @@ const airportRunways = {
     { name: "20R", enabled: true, preferredDeparture: false, preferredArrival: true },
     { name: "20C", enabled: true, preferredDeparture: true, preferredArrival: false },
   ],
+
+  VVTS: [
+    { name: "07L", enabled: true, preferredDeparture: false, preferredArrival: false },
+    { name: "07R", enabled: true, preferredDeparture: false, preferredArrival: false },
+    { name: "25L", enabled: true, preferredDeparture: false, preferredArrival: false },
+    { name: "25R", enabled: true, preferredDeparture: false, preferredArrival: false },
+  ],
+
+    WMKK: [
+      { name: "33", enabled: true, preferredDeparture: false, preferredArrival: false },
+      { name: "32L", enabled: true, preferredDeparture: false, preferredArrival: false },
+      { name: "32R", enabled: true, preferredDeparture: false, preferredArrival: false },
+      { name: "15", enabled: true, preferredDeparture: false, preferredArrival: false },
+      { name: "14L", enabled: true, preferredDeparture: false, preferredArrival: false },
+      { name: "14R", enabled: true, preferredDeparture: false, preferredArrival: false },
   // Add more airports as needed
 };
 
