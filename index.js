@@ -364,7 +364,7 @@ client.on("interactionCreate", async (interaction) => {
               f.arrival.terminal || "Currently not available."
             }\nGate: ${f.arrival.gate || "Not Available"}\nScheduled: ${formatUTC(
               f.arrival.scheduled),
-            )}\nEstimated: ${formatUTC(f.arrival.estimated)} (UTC)`,
+            }\nEstimated: ${formatUTC(f.arrival.estimated)} (UTC)`,
           },
         )
         .setFooter({ text: "IN TESTING. FSOps Virtual Bot" });
