@@ -292,7 +292,7 @@ client.on("interactionCreate", async (interaction) => {
       const runways = await pickRunways(icao, windDeg);
 
       const embed = new EmbedBuilder()
-        .setTitle(`${icao}/[IATA] ATIS INFORMATION`)
+        .setTitle(`${icao}/${iata} ATIS INFORMATION`)
         .setColor(0x1e90ff)
         .addFields(
           { name: "RAW METAR", value: `\`\`\`${metar.raw_text}\`\`\`` },
