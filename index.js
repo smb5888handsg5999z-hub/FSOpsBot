@@ -275,45 +275,97 @@ client.on("interactionCreate", async (interaction) => {
       await interaction.reply({ content: `❌ Error fetching flight ${flightNo}`, ephemeral: true });
     }
   }
-    // ------------------ ATIS ------------------
-  if (interaction.commandName === "atis-text") {
-    const icao = interaction.options.getString("icao").toUpperCase();
-    try {
-      const metarRes = await fetch(`https://api.checkwx.com/metar/${icao}/decoded`, { headers: { "X-API-Key": process.env.CHECKWX_KEY } });
-      const metarData = await metarRes.json();
-      if (!metarData.results || metarData.results === 0) return await interaction.reply({ content: `No METAR for ${icao}`, ephemeral: true });
-      const metar = metarData.data[0];
+// ------------------ ATIS & Runways ------------------
+if (interaction.commandName === "atis-text") {
+  const icao = interaction.options.getString("icao").toUpperCase();
 
-      const tafRes = await fetch(`https://api.checkwx.com/taf/${icao}/decoded`, { headers: { "X-API-Key": process.env.CHECKWX_KEY } });
-      const tafData = await tafRes.json();
-      const taf = tafData.data?.[0] || {};
-
-      const windDeg = metar.wind?.degrees ?? Math.floor(Math.random() * 360);
-      const runways = await pickRunways(icao, windDeg);
-
-      const embed = new EmbedBuilder()
-        .setTitle(`${icao}/${iata} ATIS INFORMATION`)
-        .setColor(0x1e90ff)
-        .addFields(
-          { name: "RAW METAR", value: `\`\`\`${metar.raw_text}\`\`\`` },
-          { name: "Wind", value: `${metar.wind?.degrees ?? "N/A"}° ${metar.wind?.speed_kts ?? "N/A"}KT`, inline: true },
-          { name: "Temperature", value: `${metar.temperature?.celsius ?? "N/A"}°C`, inline: true },
-          { name: "Dewpoint", value: `${metar.dewpoint?.celsius ?? "N/A"}°C`, inline: true },
-          { name: "Visibility", value: `${metar.visibility?.miles_text ?? "N/A"}`, inline: true },
-          { name: "Pressure (QNH)", value: `${metar.barometer?.hpa ?? "N/A"} hPa`, inline: true },
-          { name: "Clouds", value: metar.clouds?.map(c => `${c.text} at ${c.feet}ft`).join(", ") ?? "N/A" },
-          { name: "RAW TAF", value: `\`\`\`${taf.raw_text ?? "N/A"}\`\`\`` },
-          { name: "Decoded TAF", value: taf.forecast?.map(f => `• Wind: ${f.wind_direction_degrees ?? "N/A"}° ${f.wind_speed_kt ?? "N/A"}KT | Clouds: ${f.clouds?.map(c => c.text).join(", ") ?? "N/A"}`).join("\n") ?? "N/A" },
-          { name: "Preferred Departure Runway", value: runways.departure, inline: true },
-          { name: "Preferred Arrival Runway", value: runways.arrival, inline: true },
-          { name: "\u200B", value: "IN TESTING, FSOPSBOT" }
-        );
-      await interaction.reply({ embeds: [embed] });
-    } catch (err) {
-      console.error(err);
-      await interaction.reply({ content: `❌ Error fetching ATIS for ${icao}`, ephemeral: true });
+  try {
+    // Fetch METAR
+    const metarRes = await fetch(`https://api.checkwx.com/metar/${icao}/decoded`, {
+      headers: { "X-API-Key": process.env.CHECKWX_KEY },
+    });
+    const metarData = await metarRes.json();
+    if (!metarData.results || metarData.results === 0) {
+      await interaction.reply({ content: `No METAR found for ${icao}.`, ephemeral: true });
+      return;
     }
+    const metar = metarData.data[0];
+    const rawMetar = metar.raw_text || "N/A";
+
+    // Parse wind for runway logic
+    let windDeg, windSpeed;
+    if (metar.wind?.degrees != null) {
+      windDeg = metar.wind.degrees;
+      windSpeed = metar.wind.speed_kts;
+    } else if (metar.wind?.variable) {
+      windDeg = null; // Variable wind
+      windSpeed = metar.wind.speed_kts || 0;
+    }
+
+    // Other METAR info
+    const temperature = metar.temperature?.celsius ?? "N/A";
+    const dewpoint = metar.dewpoint?.celsius ?? "N/A";
+    const visibility = metar.visibility?.meters ?? "N/A";
+    const qnh = metar.barometer?.hpa ?? "N/A";
+    const clouds = metar.clouds?.map(c => `${c.text} at ${c.feet}ft`).join(", ") || "N/A";
+
+    // Fetch TAF
+    const tafRes = await fetch(`https://api.checkwx.com/taf/${icao}/decoded`, {
+      headers: { "X-API-Key": process.env.CHECKWX_KEY },
+    });
+    const tafData = await tafRes.json();
+    let rawTaf = "N/A";
+    let decodedTaf = "N/A";
+    if (tafData.results && tafData.results > 0) {
+      const taf = tafData.data[0];
+      rawTaf = taf.raw_text || "N/A";
+      decodedTaf = taf.forecast?.map(f => {
+        const wind = f.wind_direction_degrees != null ? `${f.wind_direction_degrees}° ${f.wind_speed_kt ?? "N/A"}KT` : "N/A° N/AKT";
+        const clouds = f.clouds?.map(c => c.text).join(", ") ?? "N/A";
+        return `• Wind: ${wind} | Clouds: ${clouds}`;
+      }).join("\n") || "N/A";
+    }
+
+    // Pick runways
+    const runways = await pickRunways(icao, windDeg ?? 0);
+    if (windDeg === null) {
+      runways.departure += " (Variable wind)";
+      runways.arrival += " (Variable wind)";
+    }
+
+    // If using local DB and none preferred, add note
+    if (airportRunways[icao] && !airportRunways[icao].some(r => r.preferredDeparture)) {
+      runways.departure += " (No preferential data)";
+    }
+    if (airportRunways[icao] && !airportRunways[icao].some(r => r.preferredArrival)) {
+      runways.arrival += " (No preferential data)";
+    }
+
+    // Create embed
+    const embed = new EmbedBuilder()
+      .setTitle(`${icao}/${icaoToIATA(icao)} ATIS INFORMATION`)
+      .setColor(0x1e90ff)
+      .addFields(
+        { name: "RAW METAR", value: `\`\`\`${rawMetar}\`\`\`` },
+        { name: "Wind", value: windDeg !== null ? `${windDeg}° ${windSpeed}KT` : `Variable ${windSpeed}KT`, inline: true },
+        { name: "Temperature", value: `${temperature}°C`, inline: true },
+        { name: "Dewpoint", value: `${dewpoint}°C`, inline: true },
+        { name: "Visibility", value: `${visibility} meters`, inline: true },
+        { name: "Pressure (QNH)", value: `${qnh} hPa`, inline: true },
+        { name: "Clouds", value: clouds },
+        { name: "RAW TAF", value: `\`\`\`${rawTaf}\`\`\`` },
+        { name: "Decoded TAF", value: decodedTaf },
+        { name: "Preferred Departure Runway", value: runways.departure, inline: true },
+        { name: "Preferred Arrival Runway", value: runways.arrival, inline: true }
+      )
+      .setFooter({ text: "IN TESTING, FSOPSBOT" });
+
+    await interaction.reply({ embeds: [embed] });
+  } catch (err) {
+    console.error(err);
+    await interaction.reply({ content: `❌ Error fetching ATIS info for ${icao}.`, ephemeral: true });
   }
+}
 
   // ---------- FLIGHT ANNOUNCE ----------
   if (interaction.commandName === "flightannounce") {
