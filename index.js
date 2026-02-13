@@ -38,31 +38,35 @@ client.once("ready", () => {
 });
 
 // ===================== HELPERS =====================
+
+// Map flight numbers (keep if you still use it)
 const airlineMap = { SIA: "SQ", TGW: "TR", MAS: "MH", HVN: "VN", AXM: "AK" };
 function mapFlightNumber(flightNo) {
   const prefix = flightNo.slice(0, 3);
   return airlineMap[prefix] ? airlineMap[prefix] + flightNo.slice(3) : flightNo;
 }
+
+// Format UTC nicely
 function formatUTC(iso) {
   if (!iso) return "N/A";
   const d = new Date(iso);
-  return `${d.getUTCDate().toString().padStart(2, "0")}-${(
-    d.getUTCMonth() + 1
-  )
-    .toString()
-    .padStart(2, "0")}-${d.getUTCFullYear()} ${d
-    .getUTCHours()
-    .toString()
-    .padStart(2, "0")}:${d.getUTCMinutes().toString().padStart(2, "0")}`;
+  return `${d.getUTCDate().toString().padStart(2,"0")}-${(d.getUTCMonth()+1).toString().padStart(2,"0")}-${d.getUTCFullYear()} ${d.getUTCHours().toString().padStart(2,"0")}:${d.getUTCMinutes().toString().padStart(2,"0")}`;
 }
+
+// Check if runway is aligned with wind
 function isRunwayAligned(heading, windDeg) {
+  if (windDeg === null) return true; // Variable wind
   const diff = Math.abs((heading - windDeg + 360) % 360);
   return diff <= 90;
 }
+
+// Get heading from runway string (e.g., 02L -> 20°)
 function runwayHeading(rwyName) {
-  const num = parseInt(rwyName.slice(0, 2), 10);
-  return num * 10;
+  const num = parseInt(rwyName.slice(0,2),10);
+  return num*10;
 }
+
+// Local DB of runways
 const airportRunways = {
   WSSS: [
     { name: "02L", enabled: true, preferredDeparture: false, preferredArrival: true },
@@ -74,38 +78,24 @@ const airportRunways = {
   ],
 };
 
-async function fetchRunwaysOnline(icao) {
+// Fetch airport info from AirportDB (runways + IATA)
+async function fetchAirportInfo(icao) {
   try {
-    const res = await fetch(
-      `https://airportdb.io/api/v1/airport/${icao}?apiToken=${process.env.AIRPORTDB_KEY}`
-    );
-    if (!res.ok) return [];
+    const res = await fetch(`https://airportdb.io/api/v1/airport/${icao}?apiToken=${process.env.AIRPORTDB_KEY}`);
+    if (!res.ok) return null;
     const data = await res.json();
-    return data.runways?.map((rwy) => ({
-      name: rwy.le_ident || rwy.he_ident,
-      enabled: rwy.closed === "0",
-      preferredDeparture: false,
-      preferredArrival: false,
-      heading: parseFloat(rwy.le_heading_degT || rwy.he_heading_degT || 0),
-    })) || [];
+    return data; // contains .iata and .runways
   } catch {
-    return [];
+    return null;
   }
 }
 
-async function pickRunways(icao, windDeg) {
-  let dbRunways = airportRunways[icao];
-  let fromDatabase = true;
-
-  if (!dbRunways) {
-    dbRunways = await fetchRunwaysOnline(icao);
-    fromDatabase = false;
-  }
-
+// Pick departure/arrival runways based on wind
+function pickRunways(runways, windDeg, fromDatabase=true) {
   const departure = [];
   const arrival = [];
 
-  dbRunways.forEach((rwy) => {
+  runways.forEach((rwy) => {
     const hdg = rwy.heading || runwayHeading(rwy.name);
     if (rwy.enabled && isRunwayAligned(hdg, windDeg)) {
       if (rwy.preferredDeparture || !fromDatabase) departure.push(rwy.name);
@@ -119,9 +109,10 @@ async function pickRunways(icao, windDeg) {
       : fromDatabase
       ? ""
       : " (from AirportDB)";
+  
   return {
     departure: departure.length ? departure.join(", ") + note : "None" + note,
-    arrival: arrival.length ? arrival.join(", ") + note : "None" + note,
+    arrival: arrival.length ? arrival.join(", ") + note : "None" + note
   };
 }
 
@@ -193,60 +184,77 @@ client.on("interactionCreate", async (interaction) => {
     const embed = new EmbedBuilder()
       .setColor(0x1e90ff)
       .setDescription(`${interaction.user} Pong!\nBot latency: ${botLatency}ms\nWebSocket: ${wsPing}ms`)
+      .setFooter({ text: "IN TESTING. FS OPERATIONS BOT" })
       .setTimestamp();
     await interaction.editReply({ content: "", embeds: [embed] });
   }
 
   // ---------- METAR ----------
-  if (interaction.commandName === "metar") {
-    const icao = interaction.options.getString("icao").toUpperCase();
-    try {
-      const res = await fetch(`https://api.checkwx.com/metar/${icao}/decoded`, { headers: { "X-API-Key": process.env.CHECKWX_KEY } });
-      const data = await res.json();
-      if (!data.results || data.results === 0) return interaction.reply({ content: `No METAR for ${icao}`, ephemeral: true });
-      const metar = data.data[0];
-      const embed = new EmbedBuilder()
-        .setTitle(`${icao} METAR`)
-        .setDescription(`\`\`\`${metar.raw_text}\`\`\``)
-        .addFields(
-          { name: "Temperature", value: `${metar.temperature?.celsius ?? "N/A"}°C`, inline: true },
-          { name: "Dewpoint", value: `${metar.dewpoint?.celsius ?? "N/A"}°C`, inline: true },
-          { name: "Wind", value: `${metar.wind?.degrees ?? "N/A"}° ${metar.wind?.speed_kts ?? "N/A"}KT`, inline: true },
-          { name: "Visibility", value: `${metar.visibility?.miles_text ?? "N/A"}`, inline: true },
-          { name: "Pressure", value: `${metar.barometer?.hpa ?? "N/A"} hPa`, inline: true },
-          { name: "Clouds", value: metar.clouds?.map(c => `${c.text} at ${c.feet}ft`).join(", ") ?? "N/A" }
-        )
-        .setColor(0x1e90ff)
-        .setTimestamp();
-      await interaction.reply({ embeds: [embed] });
-    } catch (err) {
-      console.error(err);
-      await interaction.reply({ content: `❌ Error fetching METAR for ${icao}`, ephemeral: true });
-    }
+if (interaction.commandName === "metar") {
+  const icao = interaction.options.getString("icao").toUpperCase();
+  try {
+    const res = await fetch(`https://api.checkwx.com/metar/${icao}/decoded`, {
+      headers: { "X-API-Key": process.env.CHECKWX_KEY },
+    });
+    const data = await res.json();
+    if (!data.results || data.results === 0)
+      return interaction.reply({ content: `No METAR for ${icao}`, ephemeral: true });
+
+    const metar = data.data[0];
+    const embed = new EmbedBuilder()
+      .setTitle(`${icao} METAR`)
+      .setDescription(`\`\`\`${metar.raw_text}\`\`\``)
+      .addFields(
+        { name: "Temperature", value: `${metar.temperature?.celsius ?? "N/A"}°C`, inline: true },
+        { name: "Dewpoint", value: `${metar.dewpoint?.celsius ?? "N/A"}°C`, inline: true },
+        { name: "Wind", value: `${metar.wind?.degrees ?? "N/A"}° ${metar.wind?.speed_kts ?? "N/A"}KT`, inline: true },
+        { name: "Visibility", value: `${metar.visibility?.meters ?? "N/A"} meters`, inline: true },
+        { name: "Pressure (QNH)", value: `${metar.barometer?.hpa ?? "N/A"} hPa`, inline: true },
+        { name: "Clouds", value: metar.clouds?.map(c => `${c.text} at ${c.feet}ft`).join(", ") ?? "N/A" }
+      )
+      .setColor(0x1e90ff)
+      .setFooter({ text: "IN TESTING. FS OPERATIONS BOT" })
+      .setTimestamp();
+    return interaction.reply({ embeds: [embed] });
+  } catch (err) {
+    console.error(err);
+    return interaction.reply({ content: `❌ Error fetching METAR for ${icao}`, ephemeral: true });
   }
+}
+
 
   // ---------- TAF ----------
-  if (interaction.commandName === "taf") {
-    const icao = interaction.options.getString("icao").toUpperCase();
-    try {
-      const res = await fetch(`https://api.checkwx.com/taf/${icao}/decoded`, { headers: { "X-API-Key": process.env.CHECKWX_KEY } });
-      const data = await res.json();
-      if (!data.results || data.results === 0) return interaction.reply({ content: `No TAF for ${icao}`, ephemeral: true });
-      const taf = data.data[0];
-      const embed = new EmbedBuilder()
-        .setTitle(`${icao} TAF`)
-        .setDescription(`\`\`\`${taf.raw_text ?? "N/A"}\`\`\``)
-        .addFields(
-          { name: "Forecast", value: taf.forecast?.map(f => `• Wind: ${f.wind_direction_degrees ?? "N/A"}° ${f.wind_speed_kt ?? "N/A"}KT | Clouds: ${f.clouds?.map(c => c.text).join(", ") ?? "N/A"}`).join("\n") ?? "N/A" }
-        )
-        .setColor(0x1e90ff)
-        .setTimestamp();
-      await interaction.reply({ embeds: [embed] });
-    } catch (err) {
-      console.error(err);
-      await interaction.reply({ content: `❌ Error fetching TAF for ${icao}`, ephemeral: true });
-    }
+ if (interaction.commandName === "taf") {
+  const icao = interaction.options.getString("icao").toUpperCase();
+  try {
+    const res = await fetch(`https://api.checkwx.com/taf/${icao}/decoded`, {
+      headers: { "X-API-Key": process.env.CHECKWX_KEY },
+    });
+    const data = await res.json();
+    if (!data.results || data.results === 0)
+      return interaction.reply({ content: `No TAF for ${icao}`, ephemeral: true });
+
+    const taf = data.data[0];
+    const decoded = taf.forecast?.map(f => {
+      const wind = f.wind_direction_degrees != null ? `${f.wind_direction_degrees}° ${f.wind_speed_kt ?? "N/A"}KT` : "N/A";
+      const clouds = f.clouds?.map(c => c.text).join(", ") ?? "N/A";
+      return `• Wind: ${wind} | Clouds: ${clouds}`;
+    }).join("\n") ?? "N/A";
+
+    const embed = new EmbedBuilder()
+      .setTitle(`${icao} TAF`)
+      .setDescription(`\`\`\`${taf.raw_text ?? "N/A"}\`\`\``)
+      .addFields({ name: "Decoded Forecast", value: decoded })
+      .setColor(0x1e90ff)
+      .setFooter({ text: "IN TESTING. FS OPERATIONS BOT" })
+      .setTimestamp();
+    return interaction.reply({ embeds: [embed] });
+  } catch (err) {
+    console.error(err);
+    return interaction.reply({ content: `❌ Error fetching TAF for ${icao}`, ephemeral: true });
   }
+}
+
 
   // ---------- FLIGHT SEARCH ----------
   if (interaction.commandName === "flight-search") {
@@ -268,7 +276,9 @@ client.on("interactionCreate", async (interaction) => {
           { name: "Scheduled Arrival", value: f.arrival?.scheduled ?? "N/A", inline: true }
         )
         .setColor(0x1e90ff)
+        .setFooter({ text: "IN TESTING. FS OPERATIONS BOT" })
         .setTimestamp();
+      
       await interaction.reply({ embeds: [embed] });
     } catch (err) {
       console.error(err);
@@ -278,38 +288,19 @@ client.on("interactionCreate", async (interaction) => {
 // ------------------ ATIS & Runways ------------------
 if (interaction.commandName === "atis-text") {
   const icao = interaction.options.getString("icao").toUpperCase();
-
   try {
-    // Fetch METAR
+    // METAR
     const metarRes = await fetch(`https://api.checkwx.com/metar/${icao}/decoded`, {
       headers: { "X-API-Key": process.env.CHECKWX_KEY },
     });
     const metarData = await metarRes.json();
-    if (!metarData.results || metarData.results === 0) {
-      await interaction.reply({ content: `No METAR found for ${icao}.`, ephemeral: true });
-      return;
-    }
+    if (!metarData.results || metarData.results === 0)
+      return interaction.reply({ content: `No METAR found for ${icao}`, ephemeral: true });
     const metar = metarData.data[0];
-    const rawMetar = metar.raw_text || "N/A";
+    let windDeg = metar.wind?.degrees ?? null;
+    let windSpeed = metar.wind?.speed_kts ?? 0;
 
-    // Parse wind for runway logic
-    let windDeg, windSpeed;
-    if (metar.wind?.degrees != null) {
-      windDeg = metar.wind.degrees;
-      windSpeed = metar.wind.speed_kts;
-    } else if (metar.wind?.variable) {
-      windDeg = null; // Variable wind
-      windSpeed = metar.wind.speed_kts || 0;
-    }
-
-    // Other METAR info
-    const temperature = metar.temperature?.celsius ?? "N/A";
-    const dewpoint = metar.dewpoint?.celsius ?? "N/A";
-    const visibility = metar.visibility?.meters ?? "N/A";
-    const qnh = metar.barometer?.hpa ?? "N/A";
-    const clouds = metar.clouds?.map(c => `${c.text} at ${c.feet}ft`).join(", ") || "N/A";
-
-    // Fetch TAF
+    // TAF
     const tafRes = await fetch(`https://api.checkwx.com/taf/${icao}/decoded`, {
       headers: { "X-API-Key": process.env.CHECKWX_KEY },
     });
@@ -318,52 +309,44 @@ if (interaction.commandName === "atis-text") {
     let decodedTaf = "N/A";
     if (tafData.results && tafData.results > 0) {
       const taf = tafData.data[0];
-      rawTaf = taf.raw_text || "N/A";
+      rawTaf = taf.raw_text ?? "N/A";
       decodedTaf = taf.forecast?.map(f => {
-        const wind = f.wind_direction_degrees != null ? `${f.wind_direction_degrees}° ${f.wind_speed_kt ?? "N/A"}KT` : "N/A° N/AKT";
+        const wind = f.wind_direction_degrees != null ? `${f.wind_direction_degrees}° ${f.wind_speed_kt ?? "N/A"}KT` : "N/A";
         const clouds = f.clouds?.map(c => c.text).join(", ") ?? "N/A";
         return `• Wind: ${wind} | Clouds: ${clouds}`;
-      }).join("\n") || "N/A";
+      }).join("\n") ?? "N/A";
     }
 
-    // Pick runways
-    const runways = await pickRunways(icao, windDeg ?? 0);
+    // Runways
+    const runways = await pickRunways(icao, windDeg);
     if (windDeg === null) {
       runways.departure += " (Variable wind)";
       runways.arrival += " (Variable wind)";
     }
 
-    // If using local DB and none preferred, add note
-    if (airportRunways[icao] && !airportRunways[icao].some(r => r.preferredDeparture)) {
-      runways.departure += " (No preferential data)";
-    }
-    if (airportRunways[icao] && !airportRunways[icao].some(r => r.preferredArrival)) {
-      runways.arrival += " (No preferential data)";
-    }
-
-    // Create embed
     const embed = new EmbedBuilder()
-      .setTitle(`${icao}/${icaoToIATA(icao)} ATIS INFORMATION`)
-      .setColor(0x1e90ff)
+      .setTitle(`${icao} ATIS`)
       .addFields(
-        { name: "RAW METAR", value: `\`\`\`${rawMetar}\`\`\`` },
+        { name: "RAW METAR", value: `\`\`\`${metar.raw_text ?? "N/A"}\`\`\`` },
         { name: "Wind", value: windDeg !== null ? `${windDeg}° ${windSpeed}KT` : `Variable ${windSpeed}KT`, inline: true },
-        { name: "Temperature", value: `${temperature}°C`, inline: true },
-        { name: "Dewpoint", value: `${dewpoint}°C`, inline: true },
-        { name: "Visibility", value: `${visibility} meters`, inline: true },
-        { name: "Pressure (QNH)", value: `${qnh} hPa`, inline: true },
-        { name: "Clouds", value: clouds },
+        { name: "Temperature", value: `${metar.temperature?.celsius ?? "N/A"}°C`, inline: true },
+        { name: "Dewpoint", value: `${metar.dewpoint?.celsius ?? "N/A"}°C`, inline: true },
+        { name: "Visibility", value: `${metar.visibility?.meters ?? "N/A"} meters`, inline: true },
+        { name: "Pressure (QNH)", value: `${metar.barometer?.hpa ?? "N/A"} hPa`, inline: true },
+        { name: "Clouds", value: metar.clouds?.map(c => `${c.text} at ${c.feet}ft`).join(", ") ?? "N/A" },
         { name: "RAW TAF", value: `\`\`\`${rawTaf}\`\`\`` },
         { name: "Decoded TAF", value: decodedTaf },
         { name: "Preferred Departure Runway", value: runways.departure, inline: true },
         { name: "Preferred Arrival Runway", value: runways.arrival, inline: true }
       )
-      .setFooter({ text: "IN TESTING, FSOPSBOT" });
-
-    await interaction.reply({ embeds: [embed] });
+      .setColor(0x1e90ff)
+      .setFooter({ text: "IN TESTING. FS OPERATIONS BOT" })
+" })
+      .setTimestamp();
+    return interaction.reply({ embeds: [embed] });
   } catch (err) {
     console.error(err);
-    await interaction.reply({ content: `❌ Error fetching ATIS info for ${icao}.`, ephemeral: true });
+    return interaction.reply({ content: `❌ Error fetching ATIS for ${icao}`, ephemeral: true });
   }
 }
 
