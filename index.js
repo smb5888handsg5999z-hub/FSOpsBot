@@ -1,4 +1,3 @@
-// index.js
 import "dotenv/config";
 import {
   Client,
@@ -535,10 +534,10 @@ Aircraft Type: ${aircraft}
 Captain: <@${captain?.id}>
 First Officer: <@${firstOfficer?.id}>
 Additional Crew: <@${additionalCrewMember?.id}>
-Cabin Crew: <@${cabinCrew?.id}>
-Hosted In: ${vcChannel?.toString()}
+Cabin Crew: <@${cabin_crew?.id}>
+Hosted In: ${vc_channel?.toString()}
 
-Gate Closes 15 minutes before departure.
+Gate closes 15 minutes before departure.
 
 ${roleMention}`;
     } else if (status === "cancelled") {
