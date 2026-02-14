@@ -370,6 +370,7 @@ if (interaction.commandName === "atis-text") {
     const metarData = await metarRes.json();
     if (!metarData.results || metarData.results === 0)
       return interaction.reply({ content: `No METAR found for ${icao}`, ephemeral: true });
+
     const metar = metarData.data[0];
     const windDeg = metar.wind?.degrees ?? null;
     const windSpeed = metar.wind?.speed_kts ?? 0;
@@ -379,8 +380,10 @@ if (interaction.commandName === "atis-text") {
       headers: { "X-API-Key": process.env.CHECKWX_KEY },
     });
     const tafData = await tafRes.json();
+
     let rawTaf = "N/A";
     let decodedTaf = "N/A";
+
     if (tafData.results && tafData.results > 0) {
       const taf = tafData.data[0];
       rawTaf = taf.raw_text ?? "N/A";
@@ -388,79 +391,108 @@ if (interaction.commandName === "atis-text") {
         const windDir = f.wind_direction_degrees;
         const windSpd = f.wind_speed_kt;
         const wind = (windDir !== null && windDir !== undefined)
-          ? `${windDir}° ${windSpd !== null && windSpd !== undefined ? windSpd : "0"}KT`
+          ? `${windDir}° ${windSpd ?? 0}KT`
           : "N/A";
         const clouds = f.clouds?.map(c => c.text).join(", ") ?? "N/A";
         return `• Wind: ${wind} | Clouds: ${clouds}`;
       }).join("\n") ?? "N/A";
     }
 
-// ---------- RUNWAYS ----------
-let runways = airportRunways[icao]; // Local DB
-let fromDatabase = true;
+    // ---------- RUNWAYS ----------
+    let runways = airportRunways[icao];
+    let isLocal = true;
 
-if (!runways) {
-  try {
-    const airportData = await fetchAirportInfo(icao);
-    if (airportData && airportData.runways && airportData.runways.length > 0) {
-      // Map both ends of each runway
-      runways = airportData.runways.flatMap(rwy => [
-        { 
-          name: rwy.le_ident, 
-          enabled: true, 
-          preferredDeparture: false, 
-          preferredArrival: false, 
-          heading: parseFloat(rwy.le_heading_degT) 
-        },
-        { 
-          name: rwy.he_ident, 
-          enabled: true, 
-          preferredDeparture: false, 
-          preferredArrival: false, 
-          heading: parseFloat(rwy.he_heading_degT) 
+    if (!runways) {
+      try {
+        const airportData = await fetchAirportInfo(icao);
+        if (airportData && airportData.runways?.length > 0) {
+          runways = airportData.runways.flatMap(rwy => [
+            {
+              name: rwy.le_ident,
+              enabled: true,
+              preferredDeparture: false,
+              preferredArrival: false,
+              heading: parseFloat(rwy.le_heading_degT)
+            },
+            {
+              name: rwy.he_ident,
+              enabled: true,
+              preferredDeparture: false,
+              preferredArrival: false,
+              heading: parseFloat(rwy.he_heading_degT)
+            }
+          ]);
+          isLocal = false;
+        } else {
+          runways = [];
+          isLocal = false;
         }
-      ]);
-      fromDatabase = false;
-    } else {
-      // No runways from AirportDB
-      runways = [];
+      } catch {
+        runways = [];
+        isLocal = false;
+      }
     }
-  } catch {
-    runways = [];
-  }
-}
 
-// ---------- PICK RUNWAYS ----------
-function pickRunways(runways, windDeg) {
-  if (!runways || runways.length === 0) return { departure: "N/A", arrival: "N/A" };
+    // ---------- HELPER ----------
+    function angleDiff(a, b) {
+      let diff = Math.abs(a - b) % 360;
+      return diff > 180 ? 360 - diff : diff;
+    }
 
-  // Filter runways aligned with wind
-  const aligned = runways.filter(rwy => 
-    rwy.enabled && (windDeg === null || angleDiff(rwy.heading, windDeg) <= 90)
-  );
+    // ---------- PICK RUNWAYS ----------
+    function pickRunways(runways, windDeg, isLocal) {
+      if (!runways || runways.length === 0) {
+        return { departure: "N/A", arrival: "N/A" };
+      }
 
-  // Departure/Arrival: pick all, prefer preferred if any
-  const departure = aligned.filter(rwy => rwy.preferredDeparture).length
-    ? aligned.filter(rwy => rwy.preferredDeparture)
-    : aligned;
+      // Step 1: Enabled + Wind alignment
+      const aligned = runways.filter(rwy => {
+        const heading = rwy.heading ?? runwayHeading(rwy.name);
+        return rwy.enabled && (windDeg === null || angleDiff(heading, windDeg) <= 90);
+      });
 
-  const arrival = aligned.filter(rwy => rwy.preferredArrival).length
-    ? aligned.filter(rwy => rwy.preferredArrival)
-    : aligned;
+      if (aligned.length === 0) {
+        return { departure: "N/A", arrival: "N/A" };
+      }
 
-  return {
-    departure: departure.length ? departure.map(rwy => rwy.name).join(", ") : "N/A",
-    arrival: arrival.length ? arrival.map(rwy => rwy.name).join(", ") : "N/A"
-  };
-}
+      const depPreferred = aligned.filter(r => r.preferredDeparture);
+      const arrPreferred = aligned.filter(r => r.preferredArrival);
 
-// Helper for angle difference
-function angleDiff(a, b) {
-  let diff = Math.abs(a - b) % 360;
-  return diff > 180 ? 360 - diff : diff;
-}
+      let departure = [];
+      let arrival = [];
+      let depNote = "";
+      let arrNote = "";
 
-const selectedRunways = pickRunways(runways, windDeg);
+      if (isLocal) {
+        // LOCAL DB
+        if (depPreferred.length > 0) {
+          departure = depPreferred;
+        } else {
+          departure = aligned;
+          depNote = " (No preferential data)";
+        }
+
+        if (arrPreferred.length > 0) {
+          arrival = arrPreferred;
+        } else {
+          arrival = aligned;
+          arrNote = " (No preferential data)";
+        }
+      } else {
+        // AIRPORTDB
+        departure = aligned;
+        arrival = aligned;
+        depNote = " (No preferential data)";
+        arrNote = " (No preferential data)";
+      }
+
+      return {
+        departure: departure.map(r => r.name).join(", ") + depNote,
+        arrival: arrival.map(r => r.name).join(", ") + arrNote
+      };
+    }
+
+    const selectedRunways = pickRunways(runways, windDeg, isLocal);
 
     // ---------- BUILD EMBED ----------
     const embed = new EmbedBuilder()
@@ -483,11 +515,13 @@ const selectedRunways = pickRunways(runways, windDeg);
       .setTimestamp();
 
     return interaction.reply({ embeds: [embed] });
+
   } catch (err) {
     console.error(err);
     return interaction.reply({ content: `❌ Error fetching ATIS for ${icao}`, ephemeral: true });
   }
 }
+
 
 // ---------- FLIGHT ANNOUNCE ----------
 if (interaction.commandName === "flightannounce") {
