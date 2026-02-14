@@ -496,7 +496,7 @@ if (interaction.commandName === "atis-text") {
 
     // ---------- BUILD EMBED ----------
     const embed = new EmbedBuilder()
-      .setTitle(`${icao}/${iata} ATIS`)
+      .setTitle(`${icao} ATIS`)
       .addFields(
         { name: "RAW METAR", value: `\`\`\`${metar.raw_text ?? "N/A"}\`\`\`` },
         { name: "Wind", value: windDeg !== null ? `${windDeg}° ${windSpeed}KT` : `Variable ${windSpeed}KT`, inline: true },
