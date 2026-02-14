@@ -650,35 +650,44 @@ ${nonStop ? "Non-stop • " : ""}
   await channel.send({ content: msg });
   await interaction.reply({ content: `✅ Flight ${flightNo} announcement posted in ${channel}`, ephemeral: true });
 }
-
-// ------------------ RUNWAYS ------------------
+//  --------- RUNWAYS -----------
+  
 if (interaction.commandName === "runways") {
   const icao = interaction.options.getString("icao").toUpperCase();
 
   try {
+    // Fetch the airport data
     const airport = await fetchAirportDB(icao);
+    console.log(airport); // Log airport data for debugging
 
     if (!airport) {
       await interaction.reply({ content: `❌ Airport ${icao} not found.`, ephemeral: true });
-      return; // legal return inside a function
+      return; // Legal return inside a function
     }
 
     const name = airport.name ?? "N/A";
     const elevation = airport.elevation_ft ?? "N/A";
 
-    if (!airport.runways || airport.runways.length === 0) {
+    // Check if runway data exists and is an array
+    if (!airport.runways || !Array.isArray(airport.runways) || airport.runways.length === 0) {
       await interaction.reply({ content: `No runways found for ${icao}`, ephemeral: true });
       return;
     }
 
-    // Format the runway details for better alignment
+    // Format the runway details
     const runwayLines = airport.runways.map(runway => {
-      return `**${runway.designator}**    ` +
-             `${runway.dimensions || "N/A"}    ` +
-             `${runway.status || "N/A"}    ` +
-             `${runway.heading || "N/A"}°    ` +
+      return `**${runway.designator ?? "N/A"}**    ` +
+             `${runway.dimensions ?? "N/A"}    ` +
+             `${runway.status ?? "N/A"}    ` +
+             `${runway.heading ?? "N/A"}°    ` +
              `${runway.ils ? "Yes" : "No"}`;
     }).join("\n");
+
+    // Check if runwayLines is empty (if no valid runway data)
+    if (!runwayLines) {
+      await interaction.reply({ content: `No valid runway data available for ${icao}`, ephemeral: true });
+      return;
+    }
 
     // Create the embed with improved formatting
     const embed = new EmbedBuilder()
@@ -698,11 +707,12 @@ if (interaction.commandName === "runways") {
       .setFooter({ text: "IN TESTING. FS OPERATIONS BOT" })
       .setTimestamp();
 
+    // Send the reply with the embed
     await interaction.reply({ embeds: [embed] });
 
   } catch (err) {
-    console.error(err);
-    await interaction.reply({ content: `❌ Error fetching runways for ${icao}`, ephemeral: true });
+    console.error("Error fetching runways:", err);
+    await interaction.reply({ content: `❌ Error fetching runways for ${icao}: ${err.message}`, ephemeral: true });
   }
 }
 
