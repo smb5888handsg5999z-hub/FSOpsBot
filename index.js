@@ -510,7 +510,7 @@ ${nonStop ? "Non-stop • " : ""}
 
   await channel.send({ content: msg });
   await interaction.reply({ content: `✅ Flight ${flightNo} announcement posted in ${channel}`, ephemeral: true });
-}
+});
 
 // ===================== LOGIN =====================
 client.login(process.env.DISCORD_TOKEN);
