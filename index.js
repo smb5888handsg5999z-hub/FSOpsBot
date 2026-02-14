@@ -715,6 +715,7 @@ if (interaction.commandName === "runways") {
     await interaction.reply({ content: `❌ Error fetching runways for ${icao}: ${err.message}`, ephemeral: true });
   }
 }
+});
 
 
 // ===================== LOGIN ===================== 
