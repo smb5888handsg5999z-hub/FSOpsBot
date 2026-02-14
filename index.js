@@ -619,8 +619,6 @@ ${nonStop ? "Non-stop • " : ""}
 });
 
 // ------------------ RUNWAYS ------------------
-client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isCommand()) return;
   if (interaction.commandName === "runways") {
     const icao = interaction.options.getString("icao").toUpperCase();
 
