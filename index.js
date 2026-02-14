@@ -319,51 +319,63 @@ if (interaction.commandName === "atis-text") {
     if (tafData.results && tafData.results > 0) {
       const taf = tafData.data[0];
       rawTaf = taf.raw_text ?? "N/A";
-     decodedTaf = taf.forecast?.map(f => {
-  // Ensure wind direction and speed exist
-  const windDir = f.wind_direction_degrees;
-  const windSpd = f.wind_speed_kt;
-
-  const wind = (windDir !== null && windDir !== undefined)
-    ? `${windDir}° ${windSpd !== null && windSpd !== undefined ? windSpd : "0"}KT`
-    : "N/A";
-
-  const clouds = f.clouds?.map(c => c.text).join(", ") ?? "N/A";
-
-  return `• Wind: ${wind} | Clouds: ${clouds}`;
-}).join("\n") ?? "N/A";
-
+      decodedTaf = taf.forecast?.map(f => {
+        const windDir = f.wind_direction_degrees;
+        const windSpd = f.wind_speed_kt;
+        const wind = (windDir !== null && windDir !== undefined)
+          ? `${windDir}° ${windSpd !== null && windSpd !== undefined ? windSpd : "0"}KT`
+          : "N/A";
+        const clouds = f.clouds?.map(c => c.text).join(", ") ?? "N/A";
+        return `• Wind: ${wind} | Clouds: ${clouds}`;
+      }).join("\n") ?? "N/A";
     }
 
     // ---------- RUNWAYS ----------
-    let runways = airportRunways[icao]; // Check local DB first
+    let runways = airportRunways[icao]; // Local DB
     let fromDatabase = true;
 
     if (!runways) {
-      const airportData = await fetchAirportInfo(icao); // Fetch AirportDB
-      if (!airportData || !airportData.runways || airportData.runways.length === 0) {
-        return interaction.reply({ content: `No runway data for ${icao}`, ephemeral: true });
-      }
-
-      // Map API runways to local format
-      runways = airportData.runways.map(rwy => ({
-        name: rwy.name,
-        enabled: true,
-        preferredDeparture: false, // AirportDB doesn't give preferred info
-        preferredArrival: false,
-      }));
-
-      fromDatabase = false; // Mark as API data
+      try {
+        const airportData = await fetchAirportInfo(icao);
+        if (airportData && airportData.runways && airportData.runways.length > 0) {
+          runways = airportData.runways.map(rwy => ({
+            name: rwy.name,
+            enabled: true,
+            preferredDeparture: false,
+            preferredArrival: false,
+          }));
+          fromDatabase = false;
+        }
+      } catch {}
     }
 
-    // Pick departure/arrival based on wind
-    const selectedRunways = pickRunways(runways, windDeg, fromDatabase);
+    // ---------- PICK RUNWAYS ----------
+    function pickRunways(runways, windDeg) {
+      if (!runways || runways.length === 0) return { departure: "N/A", arrival: "N/A" };
 
-    // Variable wind note
-    if (windDeg === null) {
-      selectedRunways.departure += " (Variable wind)";
-      selectedRunways.arrival += " (Variable wind)";
+      const aligned = runways.filter(rwy => 
+        rwy.enabled && (windDeg === null || angleDiff(rwy.heading || parseInt(rwy.name.slice(0,2)) * 10, windDeg) <= 90)
+      );
+
+      const preferredDep = aligned.filter(rwy => rwy.preferredDeparture);
+      const departure = preferredDep.length ? preferredDep : aligned;
+
+      const preferredArr = aligned.filter(rwy => rwy.preferredArrival);
+      const arrival = preferredArr.length ? preferredArr : aligned;
+
+      return {
+        departure: departure.length ? departure.map(rwy => rwy.name).join(", ") : "N/A",
+        arrival: arrival.length ? arrival.map(rwy => rwy.name).join(", ") : "N/A"
+      };
     }
+
+    // Helper for angle difference
+    function angleDiff(a, b) {
+      let diff = Math.abs(a - b) % 360;
+      return diff > 180 ? 360 - diff : diff;
+    }
+
+    const selectedRunways = pickRunways(runways, windDeg);
 
     // ---------- BUILD EMBED ----------
     const embed = new EmbedBuilder()
