@@ -318,7 +318,14 @@ if (interaction.commandName === "atis-text") {
     }
 
     // Runways
-    const runways = await pickRunways(icao, windDeg);
+    const localRunways = airportRunways[icao];
+
+if (!localRunways) {
+  return interaction.reply({ content: `No runway data for ${icao}`, ephemeral: true });
+}
+
+const runways = pickRunways(localRunways, windDeg, true);
+
     if (windDeg === null) {
       runways.departure += " (Variable wind)";
       runways.arrival += " (Variable wind)";
@@ -341,8 +348,8 @@ if (interaction.commandName === "atis-text") {
       )
       .setColor(0x1e90ff)
       .setFooter({ text: "IN TESTING. FS OPERATIONS BOT" })
-" })
       .setTimestamp();
+
     return interaction.reply({ embeds: [embed] });
   } catch (err) {
     console.error(err);
@@ -444,9 +451,7 @@ Captain: <@${captain?.id}>
 First Officer: <@${firstOfficer?.id}>
 Additional Crew: <@${additionalCrewMember?.id}>
 Cabin Crew: <@${cabinCrew?.id}>
-Hosted In: ${vcChannel?.toString()}
-
-Gate closes 15 minutes before departure.`;
+Hosted In: ${vcChannel?.toString()}`;
     } else if (status === "cancelled") {
       msg = `# ${airline} ${flightNo}
 **${depAirport} – ${arrAirport}**
