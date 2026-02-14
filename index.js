@@ -616,7 +616,6 @@ ${nonStop ? "Non-stop • " : ""}
   await channel.send({ content: msg });
   await interaction.reply({ content: `✅ Flight ${flightNo} announcement posted in ${channel}`, ephemeral: true });
 }
-});
 
 // ------------------ RUNWAYS ------------------
   if (interaction.commandName === "runways") {
