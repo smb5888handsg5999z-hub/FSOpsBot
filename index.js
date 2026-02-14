@@ -164,24 +164,43 @@ ${rwy.he_ident ?? "-"}    ${length}x${width} ft    ${heStatus}    ${heHeading}°
 // ===================== COMMANDS =====================
 const commands = [
   new SlashCommandBuilder().setName("ping").setDescription("Ping the bot"),
+
   new SlashCommandBuilder()
     .setName("flight-search")
     .setDescription("Search for flight information via AviationStack")
     .addStringOption((option) =>
-      option.setName("flight-number").setDescription("Enter the flight number (eg. SQ108)").setRequired(true)
+      option.setName("flight-number")
+            .setDescription("Enter the flight number (eg. SQ108)")
+            .setRequired(true)
     ),
+
   new SlashCommandBuilder()
     .setName("metar")
     .setDescription("Get METAR for an airport")
-    .addStringOption((opt) => opt.setName("icao").setDescription("ICAO code").setRequired(true)),
+    .addStringOption((opt) => 
+      opt.setName("icao")
+         .setDescription("ICAO code")
+         .setRequired(true)
+    ),
+
   new SlashCommandBuilder()
     .setName("taf")
     .setDescription("Get TAF for an airport")
-    .addStringOption((opt) => opt.setName("icao").setDescription("ICAO code").setRequired(true)),
+    .addStringOption((opt) => 
+      opt.setName("icao")
+         .setDescription("ICAO code")
+         .setRequired(true)
+    ),
+
   new SlashCommandBuilder()
     .setName("atis-text")
     .setDescription("Get full METAR, TAF, and runway info")
-    .addStringOption((opt) => opt.setName("icao").setDescription("ICAO code").setRequired(true)),
+    .addStringOption((opt) => 
+      opt.setName("icao")
+         .setDescription("ICAO code")
+         .setRequired(true)
+    ),
+
   new SlashCommandBuilder()
     .setName("flightannounce")
     .setDescription("Send a flight announcement")
@@ -203,16 +222,16 @@ const commands = [
     .addChannelOption((opt) => opt.setName("vc_channel").setDescription("VC channel"))
     .addStringOption((opt) => opt.setName("departure_terminal").setDescription("Departure terminal"))
     .addStringOption((opt) => opt.setName("departure_gate").setDescription("Departure gate")),
-].map(c => c.toJSON());
-new SlashCommandBuilder()
-  .setName("runways")
-  .setDescription("Fetch all runways for an airport from AirportDB")
-  .addStringOption(opt => 
-    opt.setName("icao")
-       .setDescription("ICAO code (e.g., WSSS)")
-       .setRequired(true)
-  )
 
+  new SlashCommandBuilder()
+    .setName("runways")
+    .setDescription("Fetch all runways for an airport from AirportDB")
+    .addStringOption(opt => 
+      opt.setName("icao")
+         .setDescription("ICAO code (e.g., WSSS)")
+         .setRequired(true)
+    )
+].map(c => c.toJSON());
 
 // ===================== REGISTER COMMANDS =====================
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
