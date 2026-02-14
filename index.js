@@ -619,34 +619,45 @@ ${nonStop ? "Non-stop • " : ""}
 });
 
 // ------------------ RUNWAYS ------------------
-if (interaction.commandName === "runways") {
-  const icao = interaction.options.getString("icao").toUpperCase();
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isCommand()) return;
+  if (interaction.commandName === "runways") {
+    const icao = interaction.options.getString("icao").toUpperCase();
 
-  try {
-    const airport = await fetchAirportDB(icao);
-    if (!airport) return interaction.reply({ content: `❌ Airport ${icao} not found.`, ephemeral: true });
+    try {
+      const airport = await fetchAirportDB(icao);
 
-    const name = airport.name ?? "N/A";
-    const elevation = airport.elevation_ft ?? "N/A";
+      if (!airport) {
+        await interaction.reply({ content: `❌ Airport ${icao} not found.`, ephemeral: true });
+        return; // legal return inside a function
+      }
 
-    if (!airport.runways || airport.runways.length === 0)
-      return interaction.reply({ content: `No runways found for ${icao}`, ephemeral: true });
+      const name = airport.name ?? "N/A";
+      const elevation = airport.elevation_ft ?? "N/A";
 
-    const runwayLines = airport.runways.map(formatRunwayLine).join("\n");
+      if (!airport.runways || airport.runways.length === 0) {
+        await interaction.reply({ content: `No runways found for ${icao}`, ephemeral: true });
+        return;
+      }
 
-    const embed = new EmbedBuilder()
-      .setTitle(`${icao}/${airport.iata_code ?? "N/A"} Runways`)
-      .setDescription(`*${name}*\n\n**Elevation:** ${elevation} ft AGL\n\n**Runway     Dimensions     Status     Heading     ILS**\n${runwayLines}\n\n*For runway preferences, use /atis-text*`)
-      .setColor(0x1e90ff)
-      .setFooter({ text: "IN TESTING. FS OPERATIONS BOT" })
-      .setTimestamp();
+      const runwayLines = airport.runways.map(formatRunwayLine).join("\n");
 
-    await interaction.reply({ embeds: [embed] });
-  } catch (err) {
-    console.error(err);
-    return interaction.reply({ content: `❌ Error fetching runways for ${icao}`, ephemeral: true });
+      const embed = new EmbedBuilder()
+        .setTitle(`${icao}/${airport.iata_code ?? "N/A"} Runways`)
+        .setDescription(`*${name}*\n\n**Elevation:** ${elevation} ft AGL\n\n**Runway     Dimensions     Status     Heading     ILS**\n${runwayLines}\n\n*For runway preferences, use /atis-text*`)
+        .setColor(0x1e90ff)
+        .setFooter({ text: "IN TESTING. FS OPERATIONS BOT" })
+        .setTimestamp();
+
+      await interaction.reply({ embeds: [embed] });
+
+    } catch (err) {
+      console.error(err);
+      await interaction.reply({ content: `❌ Error fetching runways for ${icao}`, ephemeral: true });
+    }
   }
-}
+});
+
 
 // ===================== LOGIN ===================== 
 client.login(process.env.DISCORD_TOKEN);
