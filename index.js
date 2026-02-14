@@ -496,7 +496,7 @@ if (interaction.commandName === "atis-text") {
 
     // ---------- BUILD EMBED ----------
     const embed = new EmbedBuilder()
-      .setTitle(`${icao} ATIS`)
+      .setTitle(`${icao}/${iata} ATIS`)
       .addFields(
         { name: "RAW METAR", value: `\`\`\`${metar.raw_text ?? "N/A"}\`\`\`` },
         { name: "Wind", value: windDeg !== null ? `${windDeg}° ${windSpeed}KT` : `Variable ${windSpeed}KT`, inline: true },
@@ -506,7 +506,6 @@ if (interaction.commandName === "atis-text") {
         { name: "Pressure (QNH)", value: `${metar.barometer?.hpa ?? "N/A"} hPa`, inline: true },
         { name: "Clouds", value: metar.clouds?.map(c => `${c.text} at ${c.feet}ft`).join(", ") ?? "N/A" },
         { name: "RAW TAF", value: `\`\`\`${rawTaf}\`\`\`` },
-        { name: "Decoded TAF", value: decodedTaf },
         { name: "Preferred Departure Runway", value: selectedRunways.departure, inline: true },
         { name: "Preferred Arrival Runway", value: selectedRunways.arrival, inline: true }
       )
