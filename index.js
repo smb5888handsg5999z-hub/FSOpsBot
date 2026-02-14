@@ -76,6 +76,14 @@ const airportRunways = {
     { name: "20R", enabled: true, preferredDeparture: false, preferredArrival: true },
     { name: "20C", enabled: true, preferredDeparture: true, preferredArrival: false },
   ],
+  WMKK: [
+    { name: "15", enabled: true, preferredDeparture: true, preferredArrival: true },
+    { name: "14R", enabled: true, preferredDeparture: true, preferredArrival: false },
+    { name: "14L", enabled: true, preferredDeparture: false, preferredArrival: true },
+    { name: "33", enabled: true, preferredDeparture: true, preferredArrival: true },
+    { name: "32L", enabled: true, preferredDeparture: true, preferredArrival: false },
+    { name: "32R", enabled: true, preferredDeparture: false, preferredArrival: true },
+  ],
 };
 
 // Fetch airport info from AirportDB (runways + IATA)
@@ -510,6 +518,8 @@ ${nonStop ? "Non-stop • " : ""}
 
   await channel.send({ content: msg });
   await interaction.reply({ content: `✅ Flight ${flightNo} announcement posted in ${channel}`, ephemeral: true });
+}
+});
 
 // ===================== LOGIN ===================== 
 client.login(process.env.DISCORD_TOKEN);
