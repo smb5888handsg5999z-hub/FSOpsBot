@@ -652,42 +652,59 @@ ${nonStop ? "Non-stop • " : ""}
 }
 
 // ------------------ RUNWAYS ------------------
-  if (interaction.commandName === "runways") {
-    const icao = interaction.options.getString("icao").toUpperCase();
+if (interaction.commandName === "runways") {
+  const icao = interaction.options.getString("icao").toUpperCase();
 
-    try {
-      const airport = await fetchAirportDB(icao);
+  try {
+    const airport = await fetchAirportDB(icao);
 
-      if (!airport) {
-        await interaction.reply({ content: `❌ Airport ${icao} not found.`, ephemeral: true });
-        return; // legal return inside a function
-      }
-
-      const name = airport.name ?? "N/A";
-      const elevation = airport.elevation_ft ?? "N/A";
-
-      if (!airport.runways || airport.runways.length === 0) {
-        await interaction.reply({ content: `No runways found for ${icao}`, ephemeral: true });
-        return;
-      }
-
-      const runwayLines = airport.runways.map(formatRunwayLine).join("\n");
-
-      const embed = new EmbedBuilder()
-        .setTitle(`${icao}/${airport.iata_code ?? "N/A"} Runways`)
-        .setDescription(`*${name}*\n\n**Elevation:** ${elevation} ft AGL\n\n**Runway     Dimensions     Status     Heading     ILS**\n${runwayLines}\n\n*For runway preferences, use /atis-text*`)
-        .setColor(0x1e90ff)
-        .setFooter({ text: "IN TESTING. FS OPERATIONS BOT" })
-        .setTimestamp();
-
-      await interaction.reply({ embeds: [embed] });
-
-    } catch (err) {
-      console.error(err);
-      await interaction.reply({ content: `❌ Error fetching runways for ${icao}`, ephemeral: true });
+    if (!airport) {
+      await interaction.reply({ content: `❌ Airport ${icao} not found.`, ephemeral: true });
+      return; // legal return inside a function
     }
+
+    const name = airport.name ?? "N/A";
+    const elevation = airport.elevation_ft ?? "N/A";
+
+    if (!airport.runways || airport.runways.length === 0) {
+      await interaction.reply({ content: `No runways found for ${icao}`, ephemeral: true });
+      return;
+    }
+
+    // Format the runway details for better alignment
+    const runwayLines = airport.runways.map(runway => {
+      return `**${runway.designator}**    ` +
+             `${runway.dimensions || "N/A"}    ` +
+             `${runway.status || "N/A"}    ` +
+             `${runway.heading || "N/A"}°    ` +
+             `${runway.ils ? "Yes" : "No"}`;
+    }).join("\n");
+
+    // Create the embed with improved formatting
+    const embed = new EmbedBuilder()
+      .setTitle(`${icao} / ${airport.iata_code ?? "N/A"} Runways`)
+      .setDescription(`
+        **Airport Name**: ${name}
+        **Elevation**: ${elevation} ft AGL
+
+        **Runway Info:**
+        **Designator**  **Dimensions**  **Status**  **Heading**  **ILS**
+        ---------------------------------------------------------------
+        ${runwayLines}
+        
+        *For runway preferences, use /atis-text*
+      `)
+      .setColor(0x1e90ff)
+      .setFooter({ text: "IN TESTING. FS OPERATIONS BOT" })
+      .setTimestamp();
+
+    await interaction.reply({ embeds: [embed] });
+
+  } catch (err) {
+    console.error(err);
+    await interaction.reply({ content: `❌ Error fetching runways for ${icao}`, ephemeral: true });
   }
-});
+}
 
 
 // ===================== LOGIN ===================== 
