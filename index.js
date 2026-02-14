@@ -89,6 +89,7 @@ const airportRunways = {
     { name: "07R", enabled: true, preferredDeparture: false, preferredArrival: true },
     { name: "25L", enabled: true, preferredDeparture: true, preferredArrival: false },
     { name: "25R", enabled: true, preferredDeparture: false, preferredArrival: true },
+  ],
 };
 
 // Fetch airport info from AirportDB (runways + IATA)
