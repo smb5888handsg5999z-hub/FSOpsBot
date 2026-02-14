@@ -288,8 +288,9 @@ if (interaction.commandName === "metar") {
 // ------------------ ATIS & Runways ------------------
 if (interaction.commandName === "atis-text") {
   const icao = interaction.options.getString("icao").toUpperCase();
+
   try {
-    // METAR
+    // ---------- METAR ----------
     const metarRes = await fetch(`https://api.checkwx.com/metar/${icao}/decoded`, {
       headers: { "X-API-Key": process.env.CHECKWX_KEY },
     });
@@ -297,10 +298,10 @@ if (interaction.commandName === "atis-text") {
     if (!metarData.results || metarData.results === 0)
       return interaction.reply({ content: `No METAR found for ${icao}`, ephemeral: true });
     const metar = metarData.data[0];
-    let windDeg = metar.wind?.degrees ?? null;
-    let windSpeed = metar.wind?.speed_kts ?? 0;
+    const windDeg = metar.wind?.degrees ?? null;
+    const windSpeed = metar.wind?.speed_kts ?? 0;
 
-    // TAF
+    // ---------- TAF ----------
     const tafRes = await fetch(`https://api.checkwx.com/taf/${icao}/decoded`, {
       headers: { "X-API-Key": process.env.CHECKWX_KEY },
     });
@@ -310,27 +311,53 @@ if (interaction.commandName === "atis-text") {
     if (tafData.results && tafData.results > 0) {
       const taf = tafData.data[0];
       rawTaf = taf.raw_text ?? "N/A";
-      decodedTaf = taf.forecast?.map(f => {
-        const wind = f.wind_direction_degrees != null ? `${f.wind_direction_degrees}° ${f.wind_speed_kt ?? "N/A"}KT` : "N/A";
-        const clouds = f.clouds?.map(c => c.text).join(", ") ?? "N/A";
-        return `• Wind: ${wind} | Clouds: ${clouds}`;
-      }).join("\n") ?? "N/A";
+     decodedTaf = taf.forecast?.map(f => {
+  // Ensure wind direction and speed exist
+  const windDir = f.wind_direction_degrees;
+  const windSpd = f.wind_speed_kt;
+
+  const wind = (windDir !== null && windDir !== undefined)
+    ? `${windDir}° ${windSpd !== null && windSpd !== undefined ? windSpd : "0"}KT`
+    : "N/A";
+
+  const clouds = f.clouds?.map(c => c.text).join(", ") ?? "N/A";
+
+  return `• Wind: ${wind} | Clouds: ${clouds}`;
+}).join("\n") ?? "N/A";
+
     }
 
-    // Runways
-    const localRunways = airportRunways[icao];
+    // ---------- RUNWAYS ----------
+    let runways = airportRunways[icao]; // Check local DB first
+    let fromDatabase = true;
 
-if (!localRunways) {
-  return interaction.reply({ content: `No runway data for ${icao}`, ephemeral: true });
-}
+    if (!runways) {
+      const airportData = await fetchAirportInfo(icao); // Fetch AirportDB
+      if (!airportData || !airportData.runways || airportData.runways.length === 0) {
+        return interaction.reply({ content: `No runway data for ${icao}`, ephemeral: true });
+      }
 
-const runways = pickRunways(localRunways, windDeg, true);
+      // Map API runways to local format
+      runways = airportData.runways.map(rwy => ({
+        name: rwy.name,
+        enabled: true,
+        preferredDeparture: false, // AirportDB doesn't give preferred info
+        preferredArrival: false,
+      }));
 
+      fromDatabase = false; // Mark as API data
+    }
+
+    // Pick departure/arrival based on wind
+    const selectedRunways = pickRunways(runways, windDeg, fromDatabase);
+
+    // Variable wind note
     if (windDeg === null) {
-      runways.departure += " (Variable wind)";
-      runways.arrival += " (Variable wind)";
+      selectedRunways.departure += " (Variable wind)";
+      selectedRunways.arrival += " (Variable wind)";
     }
 
+    // ---------- BUILD EMBED ----------
     const embed = new EmbedBuilder()
       .setTitle(`${icao} ATIS`)
       .addFields(
@@ -343,8 +370,8 @@ const runways = pickRunways(localRunways, windDeg, true);
         { name: "Clouds", value: metar.clouds?.map(c => `${c.text} at ${c.feet}ft`).join(", ") ?? "N/A" },
         { name: "RAW TAF", value: `\`\`\`${rawTaf}\`\`\`` },
         { name: "Decoded TAF", value: decodedTaf },
-        { name: "Preferred Departure Runway", value: runways.departure, inline: true },
-        { name: "Preferred Arrival Runway", value: runways.arrival, inline: true }
+        { name: "Preferred Departure Runway", value: selectedRunways.departure, inline: true },
+        { name: "Preferred Arrival Runway", value: selectedRunways.arrival, inline: true }
       )
       .setColor(0x1e90ff)
       .setFooter({ text: "IN TESTING. FS OPERATIONS BOT" })
@@ -357,33 +384,53 @@ const runways = pickRunways(localRunways, windDeg, true);
   }
 }
 
-  // ---------- FLIGHT ANNOUNCE ----------
-  if (interaction.commandName === "flightannounce") {
-    const status = interaction.options.getString("status");
-    const airline = interaction.options.getString("airline");
-    const flightNo = interaction.options.getString("flight_number");
-    const depAirport = interaction.options.getString("departure_airport");
-    const arrAirport = interaction.options.getString("arrival_airport");
-    const nonStop = interaction.options.getBoolean("non_stop");
-    const duration = interaction.options.getString("duration");
-    const depDate = interaction.options.getString("departure_time");
-    const arrDate = interaction.options.getString("arrival_time");
-    const aircraft = interaction.options.getString("aircraft_type");
-    const captain = interaction.options.getUser("captain");
-    const firstOfficer = interaction.options.getUser("first_officer");
-    const additionalCrewMember = interaction.options.getUser("additional_crew_member");
-    const cabinCrew = interaction.options.getUser("cabin_crew");
-    const vcChannel = interaction.options.getChannel("vc_channel");
-    const depTerminal = interaction.options.getString("departure_terminal");
-    const depGate = interaction.options.getString("departure_gate");
-    const channel = interaction.options.getChannel("channel");
+// ---------- FLIGHT ANNOUNCE ----------
+if (interaction.commandName === "flightannounce") {
+  const status = interaction.options.getString("status");
+  const airline = interaction.options.getString("airline");
+  const flightNo = interaction.options.getString("flight_number");
+  const depAirport = interaction.options.getString("departure_airport");
+  const arrAirport = interaction.options.getString("arrival_airport");
+  const nonStop = interaction.options.getBoolean("non_stop");
+  const duration = interaction.options.getString("duration");
+  const depDateRaw = interaction.options.getString("departure_time");
+  const arrDateRaw = interaction.options.getString("arrival_time");
+  const aircraft = interaction.options.getString("aircraft_type");
 
-    let msg = "";
-    if (status === "booking") {
-      msg = `# ${airline} ${flightNo}
+  // Optional users/channels
+  const captainUser = interaction.options.getUser("captain");
+  const firstOfficerUser = interaction.options.getUser("first_officer");
+  const additionalCrewUser = interaction.options.getUser("additional_crew_member");
+  const cabinCrewUser = interaction.options.getUser("cabin_crew");
+  const vcChannelObj = interaction.options.getChannel("vc_channel");
+  const depTerminalRaw = interaction.options.getString("departure_terminal");
+  const depGateRaw = interaction.options.getString("departure_gate");
+  const channel = interaction.options.getChannel("channel");
+
+  // Safe display variables
+  const captain = captainUser ? `<@${captainUser.id}>` : "Not Assigned";
+  const firstOfficer = firstOfficerUser ? `<@${firstOfficerUser.id}>` : "Not Assigned";
+  const additionalCrewMember = additionalCrewUser ? `<@${additionalCrewUser.id}>` : "Not Assigned";
+  const cabinCrew = cabinCrewUser ? `<@${cabinCrewUser.id}>` : "Not Assigned";
+  const vcChannel = vcChannelObj ? vcChannelObj.toString() : "Not Assigned";
+  const depTerminal = depTerminalRaw ?? "TBC";
+  const depGate = depGateRaw ?? "TBC";
+
+  // Safe timestamp parsing
+  const depUnix = Math.floor(new Date(depDateRaw.replace(" ", "T") + ":00Z").getTime() / 1000);
+  const arrUnix = Math.floor(new Date(arrDateRaw.replace(" ", "T") + ":00Z").getTime() / 1000);
+
+  // Format UTC nicely
+  const depFormatted = formatUTC(depDateRaw);
+  const arrFormatted = formatUTC(arrDateRaw);
+
+  let msg = "";
+
+  if (status === "booking") {
+    msg = `# ${airline} ${flightNo}
 **${depAirport} – ${arrAirport}**
 ${nonStop ? "Non-stop • " : ""}${duration}
-**${formatUTC(depDate)} – ${formatUTC(arrDate)}**
+**${depFormatted} – ${arrFormatted}**
 -# Operated by ${airline}
 Aircraft Type: ${aircraft}
 
@@ -392,78 +439,78 @@ Premium Economy Class tickets *on sale* from _SGD0_
 Business Class tickets *on sale* from _SGD0_
 
 Book by reacting with <:RSBST:1367435672658640946>
-Choose a seat when check-in opens <t:${Math.floor(new Date(depDate)/1000)}:f> (<t:${Math.floor(new Date(depDate)/1000)}:R>)
+Choose a seat when check-in opens <t:${depUnix}:f> (<t:${depUnix}:R>)
 Gate closes 15 minutes before departure.
 
-Captain: <@${captain?.id}>
-First Officer: <@${firstOfficer?.id}>
-Additional Crew: <@${additionalCrewMember?.id}>
-Cabin Crew: <@${cabinCrew?.id}>
-Hosted In: ${vcChannel?.toString()}
+Captain: ${captain}
+First Officer: ${firstOfficer}
+Additional Crew: ${additionalCrewMember}
+Cabin Crew: ${cabinCrew}
+Hosted In: ${vcChannel}
 Departure Gate: ${depTerminal} ${depGate}`;
-    } else if (status === "checkin") {
-      msg = `# ${airline} ${flightNo}
+  } else if (status === "checkin") {
+    msg = `# ${airline} ${flightNo}
 **${depAirport} – ${arrAirport}**
 ${nonStop ? "Non-stop • " : ""}${duration}
-**${formatUTC(depDate)} – ${formatUTC(arrDate)}**
+**${depFormatted} – ${arrFormatted}**
 -# Operated by ${airline}
 Aircraft Type: ${aircraft}
 
 Check in now open. React with <:RSBST:1367435672658640946>
 
-Captain: <@${captain?.id}>
-First Officer: <@${firstOfficer?.id}>
-Additional Crew: <@${additionalCrewMember?.id}>
-Cabin Crew: <@${cabinCrew?.id}>
-Hosted In: ${vcChannel?.toString()}
+Captain: ${captain}
+First Officer: ${firstOfficer}
+Additional Crew: ${additionalCrewMember}
+Cabin Crew: ${cabinCrew}
+Hosted In: ${vcChannel}
 Departure Gate: ${depTerminal} ${depGate}
 
-Gate Opens at <t:${Math.floor(new Date(depDate)/1000)}:f>
+Gate Opens at <t:${depUnix}:f>
 Gate Closes 15 minutes before departure.`;
-    } else if (status === "boarding") {
-      msg = `# ${airline} ${flightNo}
+  } else if (status === "boarding") {
+    msg = `# ${airline} ${flightNo}
 **${depAirport} – ${arrAirport}**
 ${nonStop ? "Non-stop • " : ""}${duration}
-**${formatUTC(depDate)} – ${formatUTC(arrDate)}**
+**${depFormatted} – ${arrFormatted}**
 -# Operated by ${airline}
 Aircraft Type: ${aircraft}
 
 # Boarding at ${depTerminal} ${depGate}
 
-Captain: <@${captain?.id}>
-First Officer: <@${firstOfficer?.id}>
-Additional Crew: <@${additionalCrewMember?.id}>
-Cabin Crew: <@${cabinCrew?.id}>
-Hosted In: ${vcChannel?.toString()}
+Captain: ${captain}
+First Officer: ${firstOfficer}
+Additional Crew: ${additionalCrewMember}
+Cabin Crew: ${cabinCrew}
+Hosted In: ${vcChannel}
 
 Gate Closes 15 minutes before departure.`;
-    } else if (status === "gate_closed") {
-      msg = `# ${airline} ${flightNo}
+  } else if (status === "gate_closed") {
+    msg = `# ${airline} ${flightNo}
 **${depAirport} – ${arrAirport}**
 ${nonStop ? "Non-stop • " : ""}${duration}
-**${formatUTC(depDate)} – ${formatUTC(arrDate)}**
+**${depFormatted} – ${arrFormatted}**
 -# Operated by ${airline}
 Aircraft Type: ${aircraft}
 
 # Gate Closed
 
-Captain: <@${captain?.id}>
-First Officer: <@${firstOfficer?.id}>
-Additional Crew: <@${additionalCrewMember?.id}>
-Cabin Crew: <@${cabinCrew?.id}>
-Hosted In: ${vcChannel?.toString()}`;
-    } else if (status === "cancelled") {
-      msg = `# ${airline} ${flightNo}
+Captain: ${captain}
+First Officer: ${firstOfficer}
+Additional Crew: ${additionalCrewMember}
+Cabin Crew: ${cabinCrew}
+Hosted In: ${vcChannel}
+Departure Gate: ${depTerminal} ${depGate}`;
+  } else if (status === "cancelled") {
+    msg = `# ${airline} ${flightNo}
 **${depAirport} – ${arrAirport}**
 ${nonStop ? "Non-stop • " : ""}
 
 # This flight has been cancelled. ${airline} sincerely apologizes for any inconvenience caused.`;
-    }
-
-    await channel.send({ content: msg });
-    await interaction.reply({ content: `✅ Flight ${flightNo} announcement posted in ${channel}`, ephemeral: true });
   }
-});
+
+  await channel.send({ content: msg });
+  await interaction.reply({ content: `✅ Flight ${flightNo} announcement posted in ${channel}`, ephemeral: true });
+}
 
 // ===================== LOGIN =====================
 client.login(process.env.DISCORD_TOKEN);
