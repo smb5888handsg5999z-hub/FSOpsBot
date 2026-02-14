@@ -237,6 +237,7 @@ const commands = [
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
 (async () => {
   try {
+    console.log("Commands to register:", commands.map(c => c.name));
     console.log("Registering commands...");
     await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
     console.log("Commands successfully registered!");
