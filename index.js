@@ -336,52 +336,72 @@ if (interaction.commandName === "atis-text") {
       }).join("\n") ?? "N/A";
     }
 
-    // ---------- RUNWAYS ----------
-    let runways = airportRunways[icao]; // Local DB
-    let fromDatabase = true;
+// ---------- RUNWAYS ----------
+let runways = airportRunways[icao]; // Local DB
+let fromDatabase = true;
 
-    if (!runways) {
-      try {
-        const airportData = await fetchAirportInfo(icao);
-        if (airportData && airportData.runways && airportData.runways.length > 0) {
-          runways = airportData.runways.map(rwy => ({
-            name: rwy.name,
-            enabled: true,
-            preferredDeparture: false,
-            preferredArrival: false,
-          }));
-          fromDatabase = false;
+if (!runways) {
+  try {
+    const airportData = await fetchAirportInfo(icao);
+    if (airportData && airportData.runways && airportData.runways.length > 0) {
+      // Map both ends of each runway
+      runways = airportData.runways.flatMap(rwy => [
+        { 
+          name: rwy.le_ident, 
+          enabled: true, 
+          preferredDeparture: false, 
+          preferredArrival: false, 
+          heading: parseFloat(rwy.le_heading_degT) 
+        },
+        { 
+          name: rwy.he_ident, 
+          enabled: true, 
+          preferredDeparture: false, 
+          preferredArrival: false, 
+          heading: parseFloat(rwy.he_heading_degT) 
         }
-      } catch {}
+      ]);
+      fromDatabase = false;
+    } else {
+      // No runways from AirportDB
+      runways = [];
     }
+  } catch {
+    runways = [];
+  }
+}
 
-    // ---------- PICK RUNWAYS ----------
-    function pickRunways(runways, windDeg) {
-      if (!runways || runways.length === 0) return { departure: "N/A", arrival: "N/A" };
+// ---------- PICK RUNWAYS ----------
+function pickRunways(runways, windDeg) {
+  if (!runways || runways.length === 0) return { departure: "N/A", arrival: "N/A" };
 
-      const aligned = runways.filter(rwy => 
-        rwy.enabled && (windDeg === null || angleDiff(rwy.heading || parseInt(rwy.name.slice(0,2)) * 10, windDeg) <= 90)
-      );
+  // Filter runways aligned with wind
+  const aligned = runways.filter(rwy => 
+    rwy.enabled && (windDeg === null || angleDiff(rwy.heading, windDeg) <= 90)
+  );
 
-      const preferredDep = aligned.filter(rwy => rwy.preferredDeparture);
-      const departure = preferredDep.length ? preferredDep : aligned;
+  // Departure/Arrival: pick all, prefer preferred if any
+  const departure = aligned.filter(rwy => rwy.preferredDeparture).length
+    ? aligned.filter(rwy => rwy.preferredDeparture)
+    : aligned;
 
-      const preferredArr = aligned.filter(rwy => rwy.preferredArrival);
-      const arrival = preferredArr.length ? preferredArr : aligned;
+  const arrival = aligned.filter(rwy => rwy.preferredArrival).length
+    ? aligned.filter(rwy => rwy.preferredArrival)
+    : aligned;
 
-      return {
-        departure: departure.length ? departure.map(rwy => rwy.name).join(", ") : "N/A",
-        arrival: arrival.length ? arrival.map(rwy => rwy.name).join(", ") : "N/A"
-      };
-    }
+  return {
+    departure: departure.length ? departure.map(rwy => rwy.name).join(", ") : "N/A",
+    arrival: arrival.length ? arrival.map(rwy => rwy.name).join(", ") : "N/A"
+  };
+}
 
-    // Helper for angle difference
-    function angleDiff(a, b) {
-      let diff = Math.abs(a - b) % 360;
-      return diff > 180 ? 360 - diff : diff;
-    }
+// Helper for angle difference
+function angleDiff(a, b) {
+  let diff = Math.abs(a - b) % 360;
+  return diff > 180 ? 360 - diff : diff;
+}
 
-    const selectedRunways = pickRunways(runways, windDeg);
+const selectedRunways = pickRunways(runways, windDeg);
 
     // ---------- BUILD EMBED ----------
     const embed = new EmbedBuilder()
