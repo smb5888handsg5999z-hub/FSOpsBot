@@ -129,6 +129,37 @@ function pickRunways(runways, windDeg, fromDatabase=true) {
     arrival: arrival.length ? arrival.join(", ") + note : "None" + note
   };
 }
+// Fetch airport info from AirportDB
+async function fetchAirportDB(icao) {
+  try {
+    const res = await fetch(`https://airportdb.io/api/v1/airport/${icao}?apiToken=${process.env.AIRPORTDB_KEY}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data; // contains .iata, .runways, .name, etc.
+  } catch (err) {
+    console.error(err);
+    return null;
+  }
+}
+
+// Format runway line
+function formatRunwayLine(rwy) {
+  const leHeading = rwy.le_heading_degT ?? "N/A";
+  const heHeading = rwy.he_heading_degT ?? "N/A";
+
+  const leILS = rwy.le_ils?.freq ? `${rwy.le_ils.freq} MHz` : "-";
+  const heILS = rwy.he_ils?.freq ? `${rwy.he_ils.freq} MHz` : "-";
+
+  const leStatus = rwy.closed === "1" ? "Closed" : "Open";
+  const heStatus = rwy.closed === "1" ? "Closed" : "Open";
+
+  const length = rwy.length_ft ?? "N/A";
+  const width = rwy.width_ft ?? "N/A";
+
+  return `${rwy.le_ident ?? "-"}    ${length}x${width} ft    ${leStatus}    ${leHeading}°    ${leILS}
+${rwy.he_ident ?? "-"}    ${length}x${width} ft    ${heStatus}    ${heHeading}°    ${heILS}`;
+}
+
 
 // ===================== COMMANDS =====================
 const commands = [
@@ -173,6 +204,15 @@ const commands = [
     .addStringOption((opt) => opt.setName("departure_terminal").setDescription("Departure terminal"))
     .addStringOption((opt) => opt.setName("departure_gate").setDescription("Departure gate")),
 ].map(c => c.toJSON());
+new SlashCommandBuilder()
+  .setName("runways")
+  .setDescription("Fetch all runways for an airport from AirportDB")
+  .addStringOption(opt => 
+    opt.setName("icao")
+       .setDescription("ICAO code (e.g., WSSS)")
+       .setRequired(true)
+  )
+
 
 // ===================== REGISTER COMMANDS =====================
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
@@ -558,6 +598,36 @@ ${nonStop ? "Non-stop • " : ""}
   await interaction.reply({ content: `✅ Flight ${flightNo} announcement posted in ${channel}`, ephemeral: true });
 }
 });
+
+// ------------------ RUNWAYS ------------------
+if (interaction.commandName === "runways") {
+  const icao = interaction.options.getString("icao").toUpperCase();
+
+  try {
+    const airport = await fetchAirportDB(icao);
+    if (!airport) return interaction.reply({ content: `❌ Airport ${icao} not found.`, ephemeral: true });
+
+    const name = airport.name ?? "N/A";
+    const elevation = airport.elevation_ft ?? "N/A";
+
+    if (!airport.runways || airport.runways.length === 0)
+      return interaction.reply({ content: `No runways found for ${icao}`, ephemeral: true });
+
+    const runwayLines = airport.runways.map(formatRunwayLine).join("\n");
+
+    const embed = new EmbedBuilder()
+      .setTitle(`${icao}/${airport.iata_code ?? "N/A"} Runways`)
+      .setDescription(`*${name}*\n\n**Elevation:** ${elevation} ft AGL\n\n**Runway     Dimensions     Status     Heading     ILS**\n${runwayLines}\n\n*For runway preferences, use /atis-text*`)
+      .setColor(0x1e90ff)
+      .setFooter({ text: "IN TESTING. FS OPERATIONS BOT" })
+      .setTimestamp();
+
+    await interaction.reply({ embeds: [embed] });
+  } catch (err) {
+    console.error(err);
+    return interaction.reply({ content: `❌ Error fetching runways for ${icao}`, ephemeral: true });
+  }
+}
 
 // ===================== LOGIN ===================== 
 client.login(process.env.DISCORD_TOKEN);
