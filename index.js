@@ -201,27 +201,121 @@ const commands = [
          .setRequired(true)
     ),
 
-  new SlashCommandBuilder()
+ new SlashCommandBuilder()
     .setName("flightannounce")
-    .setDescription("Send a flight announcement")
-    .addChannelOption((opt) => opt.setName("channel").setDescription("Announcement channel").setRequired(true))
-    .addStringOption((opt) => opt.setName("status").setDescription("Booking / Boarding etc").setRequired(true))
-    .addStringOption((opt) => opt.setName("airline").setDescription("Airline").setRequired(true))
-    .addStringOption((opt) => opt.setName("flight_number").setDescription("Flight Number").setRequired(true))
-    .addStringOption((opt) => opt.setName("departure_airport").setDescription("Departure ICAO").setRequired(true))
-    .addStringOption((opt) => opt.setName("arrival_airport").setDescription("Arrival ICAO").setRequired(true))
-    .addBooleanOption((opt) => opt.setName("non_stop").setDescription("Non-stop flight").setRequired(true))
-    .addStringOption((opt) => opt.setName("duration").setDescription("Flight duration").setRequired(true))
-    .addStringOption((opt) => opt.setName("departure_time").setDescription("Departure time (YYYY-MM-DD HH:mm)").setRequired(true))
-    .addStringOption((opt) => opt.setName("arrival_time").setDescription("Arrival time (YYYY-MM-DD HH:mm)").setRequired(true))
-    .addStringOption((opt) => opt.setName("aircraft_type").setDescription("Aircraft type").setRequired(true))
-    .addUserOption((opt) => opt.setName("captain").setDescription("Captain"))
-    .addUserOption((opt) => opt.setName("first_officer").setDescription("First Officer"))
-    .addUserOption((opt) => opt.setName("additional_crew_member").setDescription("Additional crew member"))
-    .addUserOption((opt) => opt.setName("cabin_crew").setDescription("Cabin crew"))
-    .addChannelOption((opt) => opt.setName("vc_channel").setDescription("VC channel"))
-    .addStringOption((opt) => opt.setName("departure_terminal").setDescription("Departure terminal"))
-    .addStringOption((opt) => opt.setName("departure_gate").setDescription("Departure gate")),
+    .setDescription("Post a flight announcement!")
+    .addChannelOption((o) =>
+      o
+        .setName("channel")
+        .setDescription("Select a channel to post the announcement.")
+        .setRequired(true),
+    )
+    .addStringOption((o) =>
+      o
+        .setName("status")
+        .setDescription("Select flight status.")
+        .setRequired(true)
+        .addChoices(
+          { name: "Booking", value: "booking" },
+          { name: "Check-in Opened", value: "checkin" },
+          { name: "Counter Check-in Opened", value: "counter_checkin" },
+          { name: "Boarding", value: "boarding" },
+          { name: "Gate Closed", value: "gate_closed" },
+          { name: "Flight Cancelled", value: "cancelled" },
+          { name: "Flight Delayed", value: "delayed" }
+        ),
+    )
+    .addStringOption((o) =>
+      o.setName("airline").setDescription("Airline").setRequired(true),
+    )
+].map(c => c.toJSON());
+    .addStringOption((o) =>
+      o
+        .setName("flight_number")
+        .setDescription("Enter the flight number")
+        .setRequired(true),
+    )
+    .addStringOption((o) =>
+      o
+        .setName("departure_airport")
+        .setDescription("The departure airport")
+        .setRequired(true),
+    )
+    .addStringOption((o) =>
+      o
+        .setName("arrival_airport")
+        .setDescription("The arrival airport")
+        .setRequired(true),
+    )
+    .addBooleanOption((o) =>
+      o
+        .setName("non_stop")
+        .setDescription("Is the flight non-stop?")
+        .setRequired(true),
+    )
+    .addStringOption((o) =>
+      o
+        .setName("duration")
+        .setDescription("Duration of the flight (estimated block time)")
+        .setRequired(true),
+    )
+    .addStringOption((o) =>
+      o
+        .setName("departure_time")
+        .setDescription("Scheduled Departure Time (YYYY-MM-DD HH:MM)")
+        .setRequired(true),
+    )
+    .addStringOption((o) =>
+      o
+        .setName("arrival_time")
+        .setDescription("Scheduled Arrival time (YYYY-MM-DD HH:MM)")
+        .setRequired(true),
+    )
+    .addStringOption((o) =>
+      o
+        .setName("aircraft_type")
+        .setDescription("The aircraft type.")
+        .setRequired(true),
+    )
+    .addUserOption((o) => o.setName("captain").setDescription("Select the captain assigned for the flight."))
+    .addUserOption((o) =>
+      o.setName("first_officer").setDescription("Select the first officer assigned for the flight."),
+    )
+    .addUserOption((o) =>
+      o.setName("additional_crew_member").setDescription("Select any addidtional assigned crew for the flight.").setRequired(false)
+    )
+    .addUserOption((o) =>
+      o.setName("cabin_crew").setDescription("Select cabin crew assigned for the flight.").setRequired(false),
+    )
+    .addChannelOption((o) =>
+      o
+        .setName("vc_channel")
+        .setDescription("Select VC channel that the flight will be hosted in.")
+        .addChannelTypes(ChannelType.GuildVoice),
+    )
+    .addStringOption((o) =>
+      o.setName("departure_terminal").setDescription("Departure Terminal"),
+    )
+    .addStringOption((o) =>
+      o.setName("departure_gate").setDescription("Enter the departure gate."),
+    )
+    .addStringOption((o) =>
+      o
+        .setName("checkin_row")
+        .setDescription("Enter the Check-in Row (Counter Check-in only)").setRequired(false),
+    )
+    .addStringOption((o) =>
+      o
+        .setName("discord_message_id")
+        .setDescription("Discord Message Link for booking."),
+    )
+    .addBooleanOption((o) =>
+      o
+        .setName("ping_role")
+        .setDescription("Ping the role in the announcement?")
+        .setRequired(false),
+    ),
+].map((c) => c.toJSON());
 
   new SlashCommandBuilder()
     .setName("runways")
@@ -523,133 +617,179 @@ if (interaction.commandName === "atis-text") {
 }
 
 
-// ---------- FLIGHT ANNOUNCE ----------
-if (interaction.commandName === "flightannounce") {
-  const status = interaction.options.getString("status");
-  const airline = interaction.options.getString("airline");
-  const flightNo = interaction.options.getString("flight_number");
-  const depAirport = interaction.options.getString("departure_airport");
-  const arrAirport = interaction.options.getString("arrival_airport");
-  const nonStop = interaction.options.getBoolean("non_stop");
-  const duration = interaction.options.getString("duration");
-  const depDateRaw = interaction.options.getString("departure_time");
-  const arrDateRaw = interaction.options.getString("arrival_time");
-  const aircraft = interaction.options.getString("aircraft_type");
+// ===================== Flight Announce =====================
+  if (interaction.commandName === "flightannounce") {
+    // variables
+    const channel = interaction.options.getChannel("channel");
+    const status = interaction.options.getString("status");
+    const airline = interaction.options.getString("airline");
+    const flightNo = interaction.options.getString("flight_number");
+    const depAirport = interaction.options.getString("departure_airport");
+    const arrAirport = interaction.options.getString("arrival_airport");
+    const nonStop = interaction.options.getBoolean("non_stop");
+    const duration = interaction.options.getString("duration");
+    const depDate = parseUTC(interaction.options.getString("departure_time"));
+    const arrDate = parseUTC(interaction.options.getString("arrival_time"));
+    const aircraft = interaction.options.getString("aircraft_type");
 
-  // Optional users/channels
-  const captainUser = interaction.options.getUser("captain");
-  const firstOfficerUser = interaction.options.getUser("first_officer");
-  const additionalCrewUser = interaction.options.getUser("additional_crew_member");
-  const cabinCrewUser = interaction.options.getUser("cabin_crew");
-  const vcChannelObj = interaction.options.getChannel("vc_channel");
-  const depTerminalRaw = interaction.options.getString("departure_terminal");
-  const depGateRaw = interaction.options.getString("departure_gate");
-  const channel = interaction.options.getChannel("channel");
+    if (!depDate || !arrDate) {
+      await interaction.reply({
+        content: "❌ Invalid departure or arrival time. Please use the format: YYYY-MM-DD HH:mm",
+        ephemeral: true,
+      });
+      return;
+    }
 
-  // Safe display variables
-  const captain = captainUser ? `<@${captainUser.id}>` : "Not Assigned";
-  const firstOfficer = firstOfficerUser ? `<@${firstOfficerUser.id}>` : "Not Assigned";
-  const additionalCrewMember = additionalCrewUser ? `<@${additionalCrewUser.id}>` : "Not Assigned";
-  const cabinCrew = cabinCrewUser ? `<@${cabinCrewUser.id}>` : "Not Assigned";
-  const vcChannel = vcChannelObj ? vcChannelObj.toString() : "Not Assigned";
-  const depTerminal = depTerminalRaw ?? "TBC";
-  const depGate = depGateRaw ?? "TBC";
+    const captain = interaction.options.getUser("captain");
+    const firstOfficer = interaction.options.getUser("first_officer");
+    const additionalCrewMember = interaction.options.getUser("additional_crew_member");
+    const cabinCrew = interaction.options.getUser("cabin_crew");
+    const vcChannel = interaction.options.getChannel("vc_channel");
+    const depTerminal = interaction.options.getString("departure_terminal");
+    const depGate = interaction.options.getString("departure_gate");
+    const checkinRow = interaction.options.getString("checkin_row") || "N/A";
+    const pingRole = interaction.options.getBoolean("ping_role") ?? true;
 
-  // Safe timestamp parsing
-  const depUnix = Math.floor(new Date(depDateRaw.replace(" ", "T") + ":00Z").getTime() / 1000);
-  const arrUnix = Math.floor(new Date(arrDateRaw.replace(" ", "T") + ":00Z").getTime() / 1000);
+    const roleMention = pingRole ? "|| <@&1394622346933043292> ||" : "";
+    const gateOpenUnix = Math.floor((depDate.getTime() - 3600000) / 1000); // 1 hour before dep
+    const bookingUnix = Math.floor((depDate.getTime() - 48 * 3600000) / 1000);
 
-  // Format UTC nicely
-  const depFormatted = formatUTC(depDateRaw);
-  const arrFormatted = formatUTC(arrDateRaw);
+    let msg = "";
 
-  let msg = "";
-
-  if (status === "booking") {
+    // --- Status Messages ---
+    if (status === "booking") {
     msg = `# ${airline} ${flightNo}
-**${depAirport} – ${arrAirport}**
-${nonStop ? "Non-stop • " : ""}${duration}
-**${depFormatted} – ${arrFormatted}**
+  **${depAirport} – ${arrAirport}**
+  ${nonStop ? "Non-stop • " : ""}${duration}
+
+**${formatAirlineDate(depDate)} – ${formatAirlineDate(arrDate)}**
 -# Operated by ${airline}
+
 Aircraft Type: ${aircraft}
 
 Economy Class tickets *on sale* from _SGD0_
 Premium Economy Class tickets *on sale* from _SGD0_
 Business Class tickets *on sale* from _SGD0_
 
-Book by reacting with <:RSBST:1367435672658640946>
-Choose a seat when check-in opens <t:${depUnix}:f> (<t:${depUnix}:R>)
+Book this flight by reacting to **this message** with <:RSBST:1367435672658640946>
+Choose a seat when check-in opens <t:${bookingUnix}:f> (<t:${bookingUnix}:R>)
 Gate closes 15 minutes before departure.
 
-Captain: ${captain}
-First Officer: ${firstOfficer}
-Additional Crew: ${additionalCrewMember}
-Cabin Crew: ${cabinCrew}
-Hosted In: ${vcChannel}
-Departure Gate: ${depTerminal} ${depGate}`;
-  } else if (status === "checkin") {
+    ${roleMention}`;
+    } else if (status === "checkin") {
     msg = `# ${airline} ${flightNo}
 **${depAirport} – ${arrAirport}**
 ${nonStop ? "Non-stop • " : ""}${duration}
-**${depFormatted} – ${arrFormatted}**
+
+**${formatAirlineDate(depDate)} – ${formatAirlineDate(arrDate)}**
 -# Operated by ${airline}
+
 Aircraft Type: ${aircraft}
 
-Check in now open. React with <:RSBST:1367435672658640946>
+Check in now open. Do check in by reacting to **this message** with <:RSBST:1367435672658640946>
 
-Captain: ${captain}
-First Officer: ${firstOfficer}
-Additional Crew: ${additionalCrewMember}
-Cabin Crew: ${cabinCrew}
-Hosted In: ${vcChannel}
+Captain: <@${captain?.id}>
+First Officer: <@${firstOfficer?.id}>
+Additional Crew Member: <@${additionalCrewMember?.id}>
+Cabin Crew: <@${cabinCrew?.id}>
+
+Hosted In: ${vcChannel?.toString()}
+
 Departure Gate: ${depTerminal} ${depGate}
 
-Gate Opens at <t:${depUnix}:f>
-Gate Closes 15 minutes before departure.`;
-  } else if (status === "boarding") {
+Gate Opens at <t:${gateOpenUnix}:f>
+Gate Closes 15 minutes before departure.
+
+     ${roleMention}`;
+    } else if (status === "counter_checkin") {
+      msg = `# ${airline} ${flightNo}
+**${depAirport} – ${arrAirport}**
+${nonStop ? "Non-stop • " : ""}${duration}
+
+**${formatAirlineDate(depDate)} – ${formatAirlineDate(arrDate)}**
+-# Operated by ${airline}
+
+Aircraft Type: ${aircraft}
+
+# Check-in now opened.
+
+Captain: <@${captain?.id}>
+First Officer: <@${firstOfficer?.id}>
+Additional Crew Member: <@${additionalCrewMember?.id}>
+Cabin Crew: <@${cabinCrew?.id}>
+
+Hosted In: ${vcChannel?.toString()}
+
+Departure Gate: ${depTerminal} ${depGate}
+Check-in Row: ${checkinRow}
+
+Gate Opens at <t:${gateOpenUnix}:f>
+Gate Closes 15 minutes before departure.
+
+     ${roleMention}`;
+    } else if (status === "boarding") {
     msg = `# ${airline} ${flightNo}
 **${depAirport} – ${arrAirport}**
 ${nonStop ? "Non-stop • " : ""}${duration}
-**${depFormatted} – ${arrFormatted}**
+
+**${formatAirlineDate(depDate)} – ${formatAirlineDate(arrDate)}**
 -# Operated by ${airline}
+
 Aircraft Type: ${aircraft}
 
 # Boarding at ${depTerminal} ${depGate}
 
-Captain: ${captain}
-First Officer: ${firstOfficer}
-Additional Crew: ${additionalCrewMember}
-Cabin Crew: ${cabinCrew}
-Hosted In: ${vcChannel}
+Captain: <@${captain?.id}>
+First Officer: <@${firstOfficer?.id}>
+Additional Crew Member: <@${additionalCrewMember?.id}>
+Cabin Crew: <@${cabinCrew?.id}>
 
-Gate Closes 15 minutes before departure.`;
-  } else if (status === "gate_closed") {
+Hosted In: ${vcChannel?.toString()}
+
+Gate Closes 15 minutes before departure.
+
+${roleMention}`;
+    } else if (status === "gate_closed") {
     msg = `# ${airline} ${flightNo}
 **${depAirport} – ${arrAirport}**
 ${nonStop ? "Non-stop • " : ""}${duration}
-**${depFormatted} – ${arrFormatted}**
+
+**${formatAirlineDate(depDate)} – ${formatAirlineDate(arrDate)}**
 -# Operated by ${airline}
+
 Aircraft Type: ${aircraft}
 
 # Gate Closed
 
-Captain: ${captain}
-First Officer: ${firstOfficer}
-Additional Crew: ${additionalCrewMember}
-Cabin Crew: ${cabinCrew}
-Hosted In: ${vcChannel}
-Departure Gate: ${depTerminal} ${depGate}`;
-  } else if (status === "cancelled") {
+Captain: <@${captain?.id}>
+First Officer: <@${firstOfficer?.id}>
+Additional Crew Member: <@${additionalCrewMember?.id}>
+Cabin Crew: <@${cabinCrew?.id}>
+
+Hosted In: ${vcChannel?.toString()}
+
+Gate Closes 15 minutes before departure.
+
+      ${roleMention}`;
+    } else if (status === "cancelled") {
     msg = `# ${airline} ${flightNo}
 **${depAirport} – ${arrAirport}**
 ${nonStop ? "Non-stop • " : ""}
+-# Operated by ${airline}
 
-# This flight has been cancelled. ${airline} sincerely apologizes for any inconvenience caused.`;
+# This flight has been cancelled. ${airline} sincerely apologizes for any inconvenience caused.
+      
+    ${roleMention}`;
+    }
+
+    await channel.send({ content: msg });
+    await interaction.reply({
+      content: `Success! ${flightNo} announcement has been posted in ${channel}`,
+      ephemeral: true,
+    });
   }
+});
 
-  await channel.send({ content: msg });
-  await interaction.reply({ content: `✅ Flight ${flightNo} announcement posted in ${channel}`, ephemeral: true });
-}
 //  --------- RUNWAYS -----------
   
 if (interaction.commandName === "runways") {
